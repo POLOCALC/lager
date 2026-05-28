@@ -1,0 +1,30 @@
+Controller:
+  name: Lab Test Controller
+  display:
+    enable: True
+    refresh_rate: 2 # Hz
+
+Drone:
+  name: DJI M600
+  simulator: False
+  connection:
+    type: serial
+    protocol: DJI OSDK
+    port: /dev/serial0
+    baudrate: 115200
+    timeout: 3
+  telemetry:
+    frequency: 50  # Hz
+
+Gimbal:
+  name: Gremsy T7
+  simulator: False
+  connection:
+    type: serial
+    protocol: mavlink
+    port: /dev/ttyAMA4
+    baudrate: 115200
+    timeout: 3
+  telemetry:
+    heartbeat_frequency: 1  # Hz
+    frequency: 50  # Hz

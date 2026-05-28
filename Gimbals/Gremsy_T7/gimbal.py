@@ -4,23 +4,28 @@ import time
 import numpy as np
 import struct
 import logging
+import os
+import pickle
+import sys
+from rich.table import Table
+from rich.panel import Panel
 
 import Gimbals.Gremsy_T7.parameters as params
 import Gimbals.Gremsy_T7.keywords as kw
 import Gimbals.Gremsy_T7.utils as utils
+import Gimbals.Gremsy_T7.telemetry_state as telemetry_state
 
 
 # use the Controller.py logging configuration
 logger = logging.getLogger(__name__)
 
 class Gimbal:
-    def __init__(self, port=params.DEFAULT_SERIAL_PORT,
-                 baudrate=params.DEFAULT_BAUDRATE,
-                 timeout=params.TIMEOUT,
-                 heartbeat_frequency=params.HEARTBEAT_FREQUENCY,
-                 simulator=False,
-                 output_dir=None
-                 ):
+    def __init__(self, port: str = params.DEFAULT_SERIAL_PORT,
+                 baudrate: int = params.DEFAULT_BAUDRATE,
+                 timeout: float = params.TIMEOUT,
+                 heartbeat_frequency: float = params.HEARTBEAT_FREQUENCY,
+                 simulator: bool = False,
+                 output_dir: str = ""):
         """
         Initialise a Gimbal instance and prepare all internal state.
 
@@ -59,15 +64,27 @@ class Gimbal:
                                       mavutil.mavlink.GIMBAL_DEVICE_FLAGS_YAW_IN_EARTH_FRAME)
 
         # dictionaries to store data
-        self.raw_imu        = {}
-        self.attitude       = {}
-        self.orientation    = {}
-        self.mount_status   = {}
-        self.sys_status     = {}
-        self.acknowledgment = {}
-        self.heartbeat_dict = {}
-        self.param_values   = {}
+        self.raw_imu           = {}
+        self.attitude          = {}
+        self.orientation       = {}
+        self.mount_status      = {}
+        self.sys_status        = {}
+        self.acknowledgment    = {}
+        self.heartbeat_dict    = {}
+        self.param_values      = {}
         self.message_intervals = {}
+
+        # buffer for recording data to file
+        self._telemetry_log_buffer = []
+
+        # filename for telemetry log
+        if self.simulator:
+            logger.info("Lab test simulator mode enabled - no serial connection will be made.")
+            self.telemetry_log_filename = "gimbal_telemetry_simulator.bin"
+        else:
+            self.telemetry_log_filename = "gimbal_telemetry.bin"
+        self.telemetry_log_filename = os.path.join(self.output_dir, self.telemetry_log_filename)
+        logger.info(f"Telemetry log will be saved to: {self.telemetry_log_filename}")
 
         # desired movement speed (deg/s); None means use the gimbal's default speed
         self.yaw_speed   = None
@@ -77,6 +94,29 @@ class Gimbal:
         self.fw_version = None
         self.serial_number = None
 
+        # telemetry state
+        self.telemetry_state = telemetry_state.TelemetryState()
+        self._log_telemetry_flag = False
+
+    def start_telemetry(self):
+        """
+        Start logging telemetry data by setting the flag to True. Telemetry data will be logged
+        in the update thread as it is received.
+        """
+        logger.info("Starting gimbal telemetry logging...")
+        self._log_telemetry_flag = True
+
+    def stop_telemetry(self):
+        """
+        Stop logging telemetry data by setting the flag to False. Any remaining data in the log
+        buffer will be written to file.
+        """
+        if self._log_telemetry_flag:
+            logger.info("Stopping gimbal telemetry logging...")
+            self._log_telemetry_flag = False
+            if self._telemetry_log_buffer:
+                logger.info(f"Writing remaining {len(self._telemetry_log_buffer)} telemetry messages to file...")
+                self._write_telemetry_log()
 
     def send_heartbeat(self):
         """
@@ -93,7 +133,7 @@ class Gimbal:
                 )
                 time.sleep(1.0/self.heartbeat_frequency)
         except Exception as e:
-            logger.exception(f"Error in heartbeat thread: {e}")
+            logger.error(f"Error in heartbeat thread: {e}")
             self.stop_event.set()
 
     def connect(self):
@@ -104,10 +144,17 @@ class Gimbal:
         """
         if self.simulator:
             logger.info("Lab test simulator mode enabled - skipping serial connection.")
+            logger.debug("Starting update thread...")
+            self.update_thread = threading.Thread(target=self.update_status_simulator, daemon=True)
+            self.update_thread.start()
             return
         
         self.stop_event.clear()
-        self.master = mavutil.mavlink_connection(self.port, baud=self.baudrate)
+        try:
+            self.master = mavutil.mavlink_connection(self.port, baud=self.baudrate)
+        except Exception as e:
+            logger.error(f"Failed to connect to gimbal on {self.port} at {self.baudrate} baudrate: {e}")
+            sys.exit(1)
         logger.info(f"Connected to gimbal on {self.port} at {self.baudrate} baudrate")
 
         logger.info("Starting heartbeat thread: heartbeat will be sent every {} seconds".format(1.0/self.heartbeat_frequency))
@@ -226,10 +273,6 @@ class Gimbal:
         Disconnect from the gimbal by stopping the heartbeat and status update threads and
         closing the serial port.
         """
-        if self.simulator:
-            logger.info("Lab test simulator mode enabled - skipping serial disconnection.")
-            return
-
         self.stop_event.set()
 
         if self.master is not None:
@@ -239,13 +282,16 @@ class Gimbal:
 
         if self.update_thread is not None and self.update_thread.is_alive():
             self.update_thread.join(timeout=self.timeout + 1)
-            logger.info("Update thread stopped")
+            logger.debug("Update thread stopped")
         self.update_thread = None
 
         if self.heartbeat_thread is not None and self.heartbeat_thread.is_alive():
             self.heartbeat_thread.join(timeout=self.timeout + 1)
-            logger.info("Heartbeat thread stopped")
+            logger.debug("Heartbeat thread stopped")
         self.heartbeat_thread = None
+
+        # stop telemetry loggin if still active and write any remaining data to file
+        self.stop_telemetry()
 
     def initialize_goto(self):
         """
@@ -385,6 +431,106 @@ class Gimbal:
 
         logger.warning(f"Gimbal did not stop within {timeout} seconds")
         return False
+    
+    def log_telemetry(self, message_dict: dict):
+        """
+        Add a telemetry message dictionary to the log buffer and write to file if the buffer exceeds the configured size.
+
+        Parameters:
+        -----------
+            message_dict : dict
+                A dictionary containing telemetry data to be logged.
+        """
+        self._telemetry_log_buffer.append(message_dict)
+        if len(self._telemetry_log_buffer) >= params.TELEMETRY_LOG_BUFFER:
+            self._write_telemetry_log()
+
+    def _write_telemetry_log(self):
+        """
+        Write the contents of the telemetry log buffer to a binary file using the pickle module.
+        """
+        if not self._telemetry_log_buffer:
+            logger.debug(f"Empty telemetry log buffer, nothing to write to {self.telemetry_log_filename}")
+            return
+        
+        try:
+            with open(self.telemetry_log_filename, 'ab') as f:
+                pickle.dump(self._telemetry_log_buffer, f)
+                self._telemetry_log_buffer.clear()
+                logger.debug(f"Telemetry log written to {self.telemetry_log_filename}")
+        except Exception as e:
+            logger.error(f"Failed to write telemetry log: {e}")
+    
+    def update_status_simulator(self):
+        """
+        Simulated status update loop for testing without a real gimbal connection. This method
+        generates synthetic telemetry data at regular intervals and updates the gimbal's instance
+        variables accordingly, mimicking the behavior of receiving real MAVLink messages.
+        """
+        try: 
+            while not self.stop_event.is_set():
+                logger.debug("Simulating telemetry update...")
+                # Generate synthetic telemetry data (replace with more realistic simulation as needed)
+                timestamp = time.time()
+                attitude_status = {
+                    'angular_velocity_x': np.random.uniform(-0.05, 0.05),
+                    'angular_velocity_y': np.random.uniform(-0.05, 0.05),
+                    'angular_velocity_z': np.random.uniform(-0.05, 0.05),
+                    'time_boot_ms': int(timestamp * 1000) % 2**32,
+                    'q': utils.euler_to_quaternion(
+                        np.random.uniform(-180, 180),  # yaw
+                        np.random.uniform(-90, 90),    # pitch
+                        np.random.uniform(-45, 45)     # roll
+                    ),
+                    'delta_yaw_velocity': np.random.uniform(-0.05, 0.05),
+                }
+                orientation_status = {
+                    'yaw': np.random.uniform(-180, 180),
+                    'pitch': np.random.uniform(-90, 90),
+                    'roll': np.random.uniform(-45, 45),
+                    'yaw_absolute': np.random.uniform(-180, 180),
+                }
+                raw_imu = {
+                    'time_usec': int(timestamp * 1e6) % 2**64,
+                    'xacc': np.random.uniform(-2, 2),
+                    'yacc': np.random.uniform(-2, 2),
+                    'zacc': np.random.uniform(-2, 2),
+                    'xgyro': np.random.uniform(-0.1, 0.1),
+                    'ygyro': np.random.uniform(-0.1, 0.1),
+                    'zgyro': np.random.uniform(-0.1, 0.1),
+                    'temperature': np.random.uniform(20, 40),
+                    'xmag': np.random.uniform(-50, 50),
+                    'ymag': np.random.uniform(-50, 50),
+                    'zmag': np.random.uniform(-50, 50),
+                }
+                mount_status = {
+                    'pointing_a': np.random.uniform(-180, 180),
+                    'pointing_b': np.random.uniform(-90, 90),
+                    'pointing_c': np.random.uniform(-45, 45),
+                    'mount_mode': np.random.choice([0, 1, 2, 3])
+                }
+                sys_status = {
+                    'load': np.random.randint(0, 100),
+                    'voltage_battery': np.random.randint(11000, 13000),
+                    'current_battery': np.random.randint(0, 2000),
+                    'battery_remaining': np.random.randint(0, 100),
+                    'drop_rate_comm': np.random.uniform(0, 1),
+                    'errors_comm': np.random.randint(0, 10),
+                    'errors_count1': np.random.randint(0, 10),
+                    'errors_count2': np.random.randint(0, 10),
+                    'errors_count3': np.random.randint(0, 10),
+                    'errors_count4': np.random.randint(0, 10),
+                }
+                self._handle_attitude_status(attitude_status)
+                self._handle_mount_orientation(orientation_status)
+                self._handle_raw_imu(raw_imu)
+                self._handle_mount_status(mount_status)
+                self._handle_sys_status(sys_status)
+
+                time.sleep(0.1)  # simulate message arrival rate of 10Hz
+        except Exception as e:
+            logger.error(f"Error in simulator update thread: {e}")
+            self.stop_event.set()
 
     def update_status(self):
         """
@@ -407,33 +553,86 @@ class Gimbal:
         try:
             utils.message_dispatcher(self.master, handlers, self.stop_event,
                                      poll_frequency=params.MESSAGE_POLL_FREQUENCY)
-        except Exception:
-            logger.exception("Update thread crashed")
+        except Exception as e:
+            logger.error(f"Update thread crashed: {e}")
             self.stop_event.set()
 
     def _handle_attitude_status(self, d):
         """Store the latest GIMBAL_DEVICE_ATTITUDE_STATUS message payload."""
+        logger.debug(f"Received GIMBAL_DEVICE_ATTITUDE_STATUS")
+        if self._log_telemetry_flag:
+            timestamp = time.time()
+            self.log_telemetry({
+                "timestamp": timestamp,
+                "keykord": kw.GIMBAL_DEVICE_ATTITUDE_STATUS_KEYWORD,
+                "data": d
+            })
         self.attitude = d
+        self.telemetry_state.update(d)
 
     def _handle_mount_orientation(self, d):
         """Store the latest MOUNT_ORIENTATION message payload."""
+        logger.debug(f"Received MOUNT_ORIENTATION")
+        if self._log_telemetry_flag:
+            timestamp = time.time()
+            self.log_telemetry({
+                "timestamp": timestamp,
+                "keykord": kw.MOUNT_ORIENTATION_KEYWORD,
+                "data": d
+            })
         self.orientation = d
-
+        self.telemetry_state.update(d)
     def _handle_raw_imu(self, d):
         """Store the latest RAW_IMU message payload."""
+        logger.debug(f"Received RAW_IMU")
+        if self._log_telemetry_flag:
+            timestamp = time.time()
+            self.log_telemetry({
+                "timestamp": timestamp,
+                "keykord": kw.RAW_IMU_KEYWORD,
+                "data": d
+            })
         self.raw_imu = d
+        self.telemetry_state.update(d)
 
     def _handle_mount_status(self, d):
         """Store the latest MOUNT_STATUS message payload."""
+        logger.debug(f"Received MOUNT_STATUS")
+        if self._log_telemetry_flag:
+            timestamp = time.time()
+            self.log_telemetry({
+                "timestamp": timestamp,
+                "keykord": kw.MOUNT_STATUS_KEYWORD,
+                "data": d
+            })
         self.mount_status = d
+        self.telemetry_state.update(d)
 
     def _handle_sys_status(self, d):
         """Store the latest SYS_STATUS message payload."""
+        logger.debug(f"Received SYS_STATUS")
+        if self._log_telemetry_flag:
+            timestamp = time.time()
+            self.log_telemetry({
+                "timestamp": timestamp,
+                "keykord": kw.SYS_STATUS_KEYWORD,
+                "data": d
+            })
         self.sys_status = d
+        self.telemetry_state.update(d)
 
     def _handle_heartbeat(self, d):
         """Store the latest HEARTBEAT message payload."""
+        logger.debug(f"Received HEARTBEAT")
+        if self._log_telemetry_flag:
+            timestamp = time.time()
+            self.log_telemetry({
+                "timestamp": timestamp,
+                "keykord": kw.HEARTBEAT_KEYWORD,
+                "data": d
+            })
         self.heartbeat_dict = d
+        self.telemetry_state.update(d)
 
     def _handle_command_ack(self, d):
         """Store the latest COMMAND_ACK payload and warn on non-accepted results."""
@@ -446,9 +645,17 @@ class Gimbal:
         Store received PARAM_VALUE messages in a dictionary keyed by param_id string for 
         retrieval by _fetch_param().
         """
+        if self._log_telemetry_flag:
+            timestamp = time.time()
+            self.log_telemetry({
+                "timestamp": timestamp,
+                "keykord": kw.PARAM_VALUE_KEYWORD,
+                "data": d
+            })
         param_id = d.get('param_id', '').rstrip('\x00')
         self.param_values[param_id] = d
-        
+        self.telemetry_state.update(d)
+
     def _handle_unhandled_message(self, d):
         """
         Default handler for any MAVLink message types that don't have a specific handler.
@@ -1621,3 +1828,76 @@ class Gimbal:
             if roll_speed is not None:
                 self.roll_speed = float(roll_speed)
             logger.info(f"Speed set to (y, p, r) = {self.yaw_speed:7.2f}, {self.pitch_speed:7.2f}, {self.roll_speed:7.2f} deg/s")
+
+
+    def render_panel(self) -> Panel:
+        # read current gimbal data for display
+        gimbal_data = self.telemetry_state.get()
+
+        if not gimbal_data:
+            return Panel("[dim]waiting for telemetry frames...[/dim]",
+                         title="Telemetry", border_style="blue", title_align="left")
+        
+        if self.simulator:
+            title = f"[bold]Gremsy T7 - Lab test simulator[/bold]"
+        else:
+            title = f"[bold]Gremsy T7 - v{self.fw_version}[/bold]"
+
+        def kv_table() -> Table:
+            t = Table.grid(expand=True, padding=(0, -5))
+            t.add_column(justify="left", style="bold yellow", no_wrap=False)
+            t.add_column(justify="left", no_wrap=True)
+            return t
+        
+        c1 = kv_table()
+        c1.add_row("Time (ms)", f"{gimbal_data.get('time_boot_ms', 0)}")
+        c1.add_row("Time (us)", f"{gimbal_data.get('time_usec', 0)}")
+        c1.add_row("[bold blue] ATTITUDE (°)", "")
+        c1.add_row("Roll",  f"{gimbal_data.get('roll', 0):+3.3f}")
+        c1.add_row("Pitch", f"{gimbal_data.get('pitch', 0):+3.3f}")
+        c1.add_row("Yaw",   f"{gimbal_data.get('yaw', 0):+3.3f}")
+        c1.add_row("Yaw abs", f"{gimbal_data.get('yaw_absolute', 0):+3.3f}")
+        c1.add_row("[bold blue] ANGULAR VEL (?)", "")
+        c1.add_row("x", f"{gimbal_data.get('angular_velocity_x', 0):+3.3f}")
+        c1.add_row("y", f"{gimbal_data.get('angular_velocity_y', 0):+3.3f}")
+        c1.add_row("z", f"{gimbal_data.get('angular_velocity_z', 0):+3.3f}")
+        c1.add_row("[bold blue] RAW IMU", "")
+        c1.add_row("x acc", f"{gimbal_data.get('xacc', 0):+3.3f}")
+        c1.add_row("y acc", f"{gimbal_data.get('yacc', 0):+3.3f}")
+        c1.add_row("z acc", f"{gimbal_data.get('zacc', 0):+3.3f}")
+        c1.add_row("x gyro", f"{gimbal_data.get('xgyro', 0):+3.3f}")
+        c1.add_row("y gyro", f"{gimbal_data.get('ygyro', 0):+3.3f}")
+        c1.add_row("z gyro", f"{gimbal_data.get('zgyro', 0):+3.3f}")
+        c1.add_row("x mag", f"{gimbal_data.get('xmag', 0):+3.3f}")
+        c1.add_row("y mag", f"{gimbal_data.get('ymag', 0):+3.3f}")
+        c1.add_row("z mag", f"{gimbal_data.get('zmag', 0):+3.3f}")
+        c1.add_row("Temp", f"{gimbal_data.get('temperature', 0):+3.3f}")
+        c1.add_row("[bold blue] SYSTEM", "")
+        c1.add_row("Load (%)", f"{gimbal_data.get('load', 0):+3.3f}")
+        c1.add_row("Battery (V)", f"{gimbal_data.get('voltage_battery', 0):.1f}")
+        c1.add_row("Current (A)", f"{gimbal_data.get('current_battery', 0):.1f}")
+        c1.add_row("Battery (%)", f"{gimbal_data.get('battery_remaining', 0):.1f}")
+
+        return Panel(c1, title=title, border_style="blue", title_align="left")
+
+"""        
+            q = attitude.get('q') or [None, None, None, None]
+            data['q0'].append(q[0])
+            data['q1'].append(q[1])
+            data['q2'].append(q[2])
+            data['q3'].append(q[3])
+            data['delta_yaw'].append(attitude.get('delta_yaw'))
+            data['delta_yaw_velocity'].append(attitude.get('delta_yaw_velocity'))
+
+            data['pointing_a'].append(mount_status.get('pointing_a'))
+            data['pointing_b'].append(mount_status.get('pointing_b'))
+            data['pointing_c'].append(mount_status.get('pointing_c'))
+            data['mount_mode'].append(mount_status.get('mount_mode'))
+
+            data['drop_rate_comm'].append(sys_status.get('drop_rate_comm'))
+            data['errors_comm'].append(sys_status.get('errors_comm'))
+            data['errors_count1'].append(sys_status.get('errors_count1'))
+            data['errors_count2'].append(sys_status.get('errors_count2'))
+            data['errors_count3'].append(sys_status.get('errors_count3'))
+            data['errors_count4'].append(sys_status.get('errors_count4'))
+"""

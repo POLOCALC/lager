@@ -21,11 +21,6 @@ def build_layout():
     )
     return layout
 
-def render_gimbal_panel(gimbal_data):
-    table = Table(title="Gimbal Telemetry")
-    # add columns and rows based on gimbal_data
-    return Panel(table)
-
 def render_footer(logs, lines=LOG_LINES_TO_SHOW):
     log_text = Text()
     for log in logs[-lines:]:
@@ -37,13 +32,16 @@ def render_footer(logs, lines=LOG_LINES_TO_SHOW):
         log_text.append(line)
     return Panel(log_text, title="[bold yellow]Most recent logs", border_style="yellow", title_align="left")
 
-def live_display(drone_panel, logfile, refresh_rate=1):
+def live_display(drone_panel=None, gimbal_panel=None, logfile=None, refresh_rate=1):
     layout = build_layout()
     with Live(layout, refresh_per_second=refresh_rate, screen=True):
         while True:
-            layout["drone"].update(drone_panel())
-            #layout["gimbal"].update(render_gimbal_panel(get_gimbal_data()))
-            layout["footer"].update(render_footer(get_logs_from_file(logfile), lines=LOG_LINES_TO_SHOW))
+            if drone_panel is not None:
+                layout["drone"].update(drone_panel())
+            if gimbal_panel is not None:
+                layout["gimbal"].update(gimbal_panel())
+            if logfile is not None:
+                layout["footer"].update(render_footer(get_logs_from_file(logfile), lines=LOG_LINES_TO_SHOW))
             # Add sleep or event wait as needed
             time.sleep(1/refresh_rate)
 

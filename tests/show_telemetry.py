@@ -5,7 +5,7 @@ sys.path.append('..')
 from Controller import Controller
 
 def main():
-    config_file = '../config/lab_test.yaml'
+    config_file = '../config/show_telemetry_config.yaml'
     controller = Controller(config_file)
     
     # connect to the drone and gimbal (if configured)
@@ -16,11 +16,13 @@ def main():
     controller.start_telemetry()
 
 
-    # stop telemetry logging after 5 seconds (for testing purposes)
-    time.sleep(5)
-    controller.stop_telemetry()
-
-
+    # stop telemetry logging if ctrl+c is pressed
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        controller.stop_telemetry()
+        
     # disconnect from the drone and gimbal
     controller.disconnect()
 

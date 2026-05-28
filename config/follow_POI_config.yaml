@@ -6,7 +6,7 @@ Controller:
 
 Drone:
   name: DJI M600
-  simulator: True
+  simulator: False
   connection:
     type: serial
     protocol: DJI OSDK
@@ -18,13 +18,19 @@ Drone:
 
 Gimbal:
   name: Gremsy T7
-  simulator: True
+  simulator: False
   connection:
     type: serial
     protocol: mavlink
-    port: /dev/serial1
+    port: /dev/ttyAMA4
     baudrate: 115200
     timeout: 3
   telemetry:
     heartbeat_frequency: 1  # Hz
     frequency: 50  # Hz
+
+POI:
+  name: Fake POI
+  latitude: 37.7749
+  longitude: -122.4194
+  altitude: 30.0

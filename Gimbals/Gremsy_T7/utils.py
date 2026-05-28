@@ -1,6 +1,7 @@
 from pymavlink import mavutil
 import time
 import logging
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ def message_dispatcher(master, handlers, stop_event, poll_frequency=20):
                     logging.debug(f"Msg received: '{msg_type}'")
                     handler(parse_msg(msg))
                 except Exception:
-                    logger.exception(f"Error occurred while handling message of type {msg_type}")
+                    logger.error(f"Error occurred while handling message of type {msg_type}")
                     continue
             else:
                 logger.debug(f"No handler registered for message type '{msg_type}', ignoring.")
@@ -118,3 +119,37 @@ def interp(start, target, axis_time, elapsed):
         return target
     t = min(elapsed / axis_time, 1.0)
     return start + t * (target - start)
+
+def euler_to_quaternion(yaw, pitch, roll):
+    """
+    Convert Euler angles (yaw, pitch, roll) in degrees to a quaternion (w, x, y, z).
+
+    Parameters:
+    -----------
+    yaw : float
+        The yaw angle in degrees.
+    pitch : float
+        The pitch angle in degrees.
+    roll : float
+        The roll angle in degrees.
+
+    Returns:
+    --------    
+    list: A list containing the quaternion components [w, x, y, z].
+    """
+
+    # Convert degrees to radians
+    yaw = np.radians(yaw)
+    pitch = np.radians(pitch)
+    roll = np.radians(roll)
+    cy = np.cos(yaw * 0.5)
+    sy = np.sin(yaw * 0.5)
+    cp = np.cos(pitch * 0.5)
+    sp = np.sin(pitch * 0.5)
+    cr = np.cos(roll * 0.5)
+    sr = np.sin(roll * 0.5)
+    w = cr * cp * cy + sr * sp * sy
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+    return [w, x, y, z]

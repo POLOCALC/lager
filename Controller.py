@@ -8,6 +8,7 @@ import threading
 from Drones import DJI_M600
 from Gimbals import Gremsy_T7
 import cli
+import POI
 
 DATA_PATH = 'data'
 
@@ -85,9 +86,17 @@ class Controller:
                 self.drone_panel = self.drone.render_panel
             else:
                 self.drone_panel = lambda: None
-            display_thread = threading.Thread(target=cli.live_display, args=(self.drone_panel, logging_file, refresh_rate))
+            
+            if self.gimbal is not None:
+                self.gimbal_panel = self.gimbal.render_panel
+            else:
+                self.gimbal_panel = lambda: None
+
+            display_thread = threading.Thread(target=cli.live_display, args=(self.drone_panel, self.gimbal_panel, logging_file, refresh_rate))
             display_thread.start()
 
+        # POI object
+        self.poi = None
 
 
     def get_drone(self) -> object:
@@ -156,7 +165,6 @@ class Controller:
         
         if 'simulator' in self.config['Gimbal']:
             simulator = self.config['Gimbal']['simulator']
-            logging.warning("Gimbal simulator mode is not yet implemented, but 'simulator' field found in configuration.")
         
         if 'connection' in self.config['Gimbal']:
             connection_type = self.config['Gimbal']['connection'].get('type', 'unknown')
@@ -236,6 +244,12 @@ class Controller:
             self.drone.start_telemetry()
         else:
             logging.warning("No drone configured, cannot start telemetry.")
+
+        if self.gimbal is not None:
+            logging.info("Starting gimbal telemetry logging...")
+            self.gimbal.start_telemetry()
+        else:
+            logging.warning("No gimbal configured, cannot start telemetry.")
         
     
     def stop_telemetry(self):
@@ -245,14 +259,44 @@ class Controller:
         else:
             logging.warning("No drone configured, cannot stop telemetry.")
 
+        if self.gimbal is not None:
+            logging.info("Stopping gimbal telemetry logging...")
+            self.gimbal.stop_telemetry()
+        else:
+            logging.warning("No gimbal configured, cannot stop telemetry.")
+
         logging.info("Telemetry logging stopped. Data saved to: " + self.data_folder)
 
+
+    def set_POI(self):
+        # check if POI is configured
+        if 'POI' not in self.config:
+            logging.warning("Configuration file is missing 'POI' section.")
+            self.poi = None
+            return None
+        
+        if 'name' in self.config['POI']:
+            name = self.config['POI']['name']
+            logging.info(f"POI type specified in configuration: {name}")
+        else:
+            name = "unknown"
+
+        if 'latitude' in self.config['POI'] and 'longitude' in self.config['POI'] and 'altitude' in self.config['POI']:
+            latitude = self.config['POI']['latitude']
+            longitude = self.config['POI']['longitude']
+            altitude = self.config['POI']['altitude']
+            logging.info(f"POI coordinates: lat={latitude}, lon={longitude}, alt={altitude}")
+        else:
+            logging.warning("POI configuration is missing 'latitude', 'longitude', or 'altitude' fields.")
+            self.poi = None
+            return None
+        
+        self.poi = POI.POI(name, latitude, longitude, altitude)
     
     def get_drone_data(self):
         return None
     
     def get_gimbal_data(self):
-        
         return None
     
     def get_logs(self):

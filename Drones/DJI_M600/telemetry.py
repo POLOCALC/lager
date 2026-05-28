@@ -26,7 +26,7 @@ class Telemetry:
                  timeout: float = params.SERIAL_TIMEOUT,
                  telemetry_frequency: int = params.TELEMETRY_FREQ,
                  simulator: bool = False,
-                 output_dir: str = None):
+                 output_dir: str = ""):
         
         # output directory for telemetry log
         self.output_dir = output_dir
@@ -59,30 +59,49 @@ class Telemetry:
         decode them, and add them to a queue for writing to disk.
         """
         try:
-            # create a buffer to store incoming telemetry frames before writing to disk
-            acc = bytearray()
-
             while not self.stop_event.is_set():
                 # check if serial port is open before attempting to read
                 if not self.connection.serial or not self.connection.serial.is_open:
                     logger.error("Serial port not open. Exiting read loop.")
                     break
 
-                # read incoming telemetry frames
-                chunk = self.connection.serial.read(params.SERIAL_READ_SIZE)
-                if not chunk:
-                    continue
+                # read the header first to determine the total frame length
+                header = self.connection.serial.read(params.HEADER_LEN)
+                if len(header) < params.HEADER_LEN:
+                    logger.debug(f"Incomplete header received (got {len(header)} bytes), waiting for more data...")
+                    continue  # incomplete header
 
-                acc.extend(chunk)
+                # validate CRC16 of the header (first 10 bytes, CRC stored at bytes 10-11)
+                stored_crc16 = struct.unpack_from('<H', header, 10)[0]
+                computed_crc16 = utils.crc16(header[:10])
+                if stored_crc16 != computed_crc16:
+                    logger.debug(f"Header CRC16 mismatch: stored=0x{stored_crc16:04X}, computed=0x{computed_crc16:04X}. Skipping frame.")
+                    continue  # invalid header, skip this frame
 
-                consumed_up_to = 0
-                for off, raw in self.scan_frames(bytes(acc)):
-                    frame_bytes = bytes(raw)
-                    # add validated frames to queue for writing
-                    self.log_queue.put(frame_bytes)
+                # parse total frame length
+                w0 = struct.unpack_from('<I', header, 0)[0]
+                total_len = (w0 >> 8) & 0x3FF
 
-                    # decode broadcast frames and update shared display state
-                    f = self.parse_frame(frame_bytes)
+                if total_len < params.HEADER_LEN + params.CRC32_LEN:
+                    logger.debug(f"Invalid frame length received: {total_len}")
+                    continue  # invalid length
+
+                # read the rest of the frame based on the total length
+                rest = self.connection.serial.read(total_len - params.HEADER_LEN)
+                if len(rest) < (total_len - params.HEADER_LEN):
+                    logger.debug(f"Incomplete frame received (got {len(rest)} bytes), waiting for more data...")
+                    continue  # incomplete frame
+                
+                # complete frame
+                timestamp = time.time()
+                frame = header + rest
+
+                # add validated frames and their timestamp to the queue for writing
+                self.log_queue.put((timestamp, frame))
+
+                # decode broadcast frames and update shared display state
+                f = self.parse_frame(frame)
+                if f:
                     if (not f['is_ack'] and f['crc32_ok']
                             and f['cmd_set'] == params.CMD_SET_BROADCAST
                             and f['cmd_id'] == params.CMD_ID_BROADCAST):
@@ -91,16 +110,6 @@ class Telemetry:
                         # update telemetry state
                         self.telemetry_state.update(bd)
 
-                    consumed_up_to = off + len(raw)
-                
-                # remove consumed bytes
-                if consumed_up_to:
-                    del acc[:consumed_up_to]
-
-                # safety check to prevent unbounded memory growth if no valid frames are found
-                if len(acc) > 2 * params.SERIAL_READ_SIZE:
-                    acc.clear()
-            
         except Exception as e:
             logger.error(f"Error in read loop: {e}")
             self.stop_event.set()
@@ -126,9 +135,11 @@ class Telemetry:
             # drains the log_queue and writes to disk in batches until stop_event is set and queue is empty
             while not self.stop_event.is_set() or not self.log_queue.empty():
                 try:
-                    raw = self.log_queue.get(timeout=0.1)
+                    timestamp, frame = self.log_queue.get(timeout=0.1)
 
-                    write_buf.append(raw)
+                    write_buf.append(struct.pack('<dI', timestamp, len(frame)))  # 8 bytes for timestamp + 4 bytes for frame length
+                    write_buf.append(frame)
+                    
                     frame_count += 1
 
                     if len(write_buf) >= params.BATCH_SIZE:
@@ -283,11 +294,6 @@ class Telemetry:
         self.connection.connect()
         time.sleep(0.1)
 
-        # drain stale bytes
-        stale = self.connection.serial.read(params.SERIAL_READ_SIZE)
-        if stale:
-            logger.info(f"Drained {len(stale)} stale bytes")
-
         # read version info to confirm connection
         self.get_version()
 
@@ -319,6 +325,11 @@ class Telemetry:
         # if we get an ACK, the link is alive and we can proceed to parse 
         # incoming telemetry frames
         for attempt in range(1, retries+1):
+            # drain stale bytes
+            stale = self.connection.serial.read(params.SERIAL_READ_SIZE)
+            if stale:
+                logger.info(f"Drained {len(stale)} stale bytes")
+
             ver_frame = self.build_frame(params.CMD_SET_GENERAL, params.CMD_ID_VERSION, b'\x00', seq=0, session=2)
             logger.info(f"Handshake attempt {attempt}/{retries}")
             logger.debug(f"TX: {ver_frame.hex(' ')}")
@@ -799,12 +810,6 @@ class Telemetry:
         c1.add_row("Roll",  f"{drone_data.get('roll', 0):+3.3f}")
         c1.add_row("Pitch", f"{drone_data.get('pitch', 0):+3.3f}")
         c1.add_row("Yaw",   f"{drone_data.get('yaw', 0):+3.3f}")
-        c1.add_row("[bold blue] QUATERNION[/bold blue]", "")
-        c1.add_row("w",   f"{q[0]:+.5f}")
-        c1.add_row("x",   f"{q[1]:+.5f}")
-        c1.add_row("y",   f"{q[2]:+.5f}")
-        c1.add_row("z",   f"{q[3]:+.5f}")
-        c1.add_row("|q|", f"{drone_data.get('qmag', 0):.6f}")
         c1.add_row("[bold blue] ACCEL (g)[/bold blue]", "")
         c1.add_row("x", f"{drone_data.get('ax', 0):+.4f}")
         c1.add_row("y", f"{drone_data.get('ay', 0):+.4f}")
@@ -822,6 +827,12 @@ class Telemetry:
         c1.add_row("x", f"{drone_data.get('mx', 0):6d}")
         c1.add_row("y", f"{drone_data.get('my', 0):6d}")
         c1.add_row("z", f"{drone_data.get('mz', 0):6d}")
+        c1.add_row("[bold blue] QUATERNION[/bold blue]", "")
+        c1.add_row("w",   f"{q[0]:+.5f}")
+        c1.add_row("x",   f"{q[1]:+.5f}")
+        c1.add_row("y",   f"{q[2]:+.5f}")
+        c1.add_row("z",   f"{q[3]:+.5f}")
+        c1.add_row("|q|", f"{drone_data.get('qmag', 0):.6f}")
         c1.add_row("[bold blue] CANBUS GIMBAL[/bold blue]", "")
         c1.add_row("Roll (°)",  f"{drone_data.get('gim_roll', 0):+3.2f}")
         c1.add_row("Pitch (°)", f"{drone_data.get('gim_pitch', 0):+3.2f}")
