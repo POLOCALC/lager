@@ -1,0 +1,107 @@
+[2026-05-15 19:55:40.192 INFO] (root): Configuration loaded successfully from ../config/move_gimbal_config.yaml
+[2026-05-15 19:55:40.193 INFO] (root): Configuration copied to data/flight_controller_20260515_195540/move_gimbal_config.yaml
+[2026-05-15 19:55:40.193 INFO] (root): Controller name: Lab Test Controller
+[2026-05-15 19:55:40.193 INFO] (root): Display enabled in configuration.
+[2026-05-15 19:55:40.193 INFO] (root): Display refresh rate: 2 Hz
+[2026-05-15 19:55:40.193 INFO] (root): Drone type specified in configuration: DJI M600
+[2026-05-15 19:55:40.193 INFO] (root): Drone connection type: serial
+[2026-05-15 19:55:40.193 INFO] (root): Drone connection protocol: DJI OSDK
+[2026-05-15 19:55:40.193 INFO] (root): Drone connection port: /dev/serial0
+[2026-05-15 19:55:40.193 INFO] (root): Drone connection baudrate: 115200
+[2026-05-15 19:55:40.194 INFO] (root): Drone connection timeout: 3
+[2026-05-15 19:55:40.194 INFO] (root): Drone telemetry frequency: 50 Hz
+[2026-05-15 19:55:40.194 INFO] (root): Gimbal type specified in configuration: Gremsy T7
+[2026-05-15 19:55:40.194 INFO] (root): Gimbal connection type: serial
+[2026-05-15 19:55:40.194 INFO] (root): Gimbal connection protocol: mavlink
+[2026-05-15 19:55:40.194 INFO] (root): Gimbal connection port: /dev/ttyAMA4
+[2026-05-15 19:55:40.194 INFO] (root): Gimbal connection baudrate: 115200
+[2026-05-15 19:55:40.194 INFO] (root): Gimbal connection timeout: 3
+[2026-05-15 19:55:40.194 INFO] (root): Gimbal telemetry frequency: 50 Hz
+[2026-05-15 19:55:40.194 INFO] (root): Gimbal heartbeat frequency: 1 Hz
+[2026-05-15 19:55:40.194 INFO] (Gimbals.Gremsy_T7.Gimbal): Telemetry log will be saved to: data/flight_controller_20260515_195540/gimbal_telemetry.bin
+[2026-05-15 19:55:40.206 INFO] (root): Connecting to drone...
+[2026-05-15 19:55:40.207 INFO] (Drones.DJI_M600.connection): Successfully connected to drone on /dev/serial0 at 115200 baud.
+[2026-05-15 19:55:40.562 INFO] (Drones.DJI_M600.Drone): Drained 4096 stale bytes
+[2026-05-15 19:55:40.562 INFO] (Drones.DJI_M600.Drone): Handshake attempt 1/5
+[2026-05-15 19:55:40.673 INFO] (Drones.DJI_M600.Drone): Handshake successful. Active telemetry mode enabled.
+[2026-05-15 19:55:40.673 INFO] (Drones.DJI_M600.Drone): Version_ack = 0xFF01
+[2026-05-15 19:55:40.673 INFO] (Drones.DJI_M600.Drone): Version_name: 'SDK-v1.1 BETA PM820V3-03.02.41.14'
+[2026-05-15 19:55:40.673 INFO] (Drones.DJI_M600.Drone): Firmware version: 3.2.41.14  (0x0302290E)
+[2026-05-15 19:55:40.673 INFO] (root): Connecting to gimbal...
+[2026-05-15 19:55:40.674 INFO] (Gimbals.Gremsy_T7.Gimbal): Connected to gimbal on /dev/ttyAMA4 at 115200 baudrate
+[2026-05-15 19:55:40.674 INFO] (Gimbals.Gremsy_T7.Gimbal): Starting heartbeat thread: heartbeat will be sent every 1.0 seconds
+[2026-05-15 19:55:42.683 INFO] (Gimbals.Gremsy_T7.Gimbal): Received heartbeat from gimbal with system_id=255 and component_id=154
+[2026-05-15 19:55:42.684 INFO] (Gimbals.Gremsy_T7.Gimbal): Starting update thread: status will be updated every 0.01 seconds
+[2026-05-15 19:55:42.785 INFO] (Gimbals.Gremsy_T7.Gimbal): Firmware version: 7.8.7 serial number: 140
+[2026-05-15 19:55:42.786 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: MAV_RATE_ORIEN       = 10
+[2026-05-15 19:55:42.786 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: MAV_RATE_IMU         = 10
+[2026-05-15 19:55:42.786 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: MAV_RATE_ENCCNT      = 10
+[2026-05-15 19:55:42.786 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: MAV_RATE_ST          = 5
+[2026-05-15 19:55:42.786 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: STIFF_TILT       = 30
+[2026-05-15 19:55:42.786 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: STIFF_ROLL       = 35
+[2026-05-15 19:55:42.787 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: STIFF_PAN        = 45
+[2026-05-15 19:55:42.787 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: PWR_TILT         = 40
+[2026-05-15 19:55:42.798 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: PWR_ROLL         = 40
+[2026-05-15 19:55:42.798 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: PWR_PAN          = 40
+[2026-05-15 19:55:42.799 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: FILTER_OUT       = 0
+[2026-05-15 19:55:42.799 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: GYRO_LPF         = 8
+[2026-05-15 19:55:42.805 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: FLW_SP_TILT      = 90
+[2026-05-15 19:55:42.805 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: FLW_SP_PAN       = 90
+[2026-05-15 19:55:42.813 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: FLW_LPF_TILT     = 40
+[2026-05-15 19:55:42.813 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: FLW_LPF_PAN      = 40
+[2026-05-15 19:55:42.813 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: FLW_WD_TILT      = 0
+[2026-05-15 19:55:42.821 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: FLW_WD_PAN       = 0
+[2026-05-15 19:55:42.821 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_LPF_TILT      = 25
+[2026-05-15 19:55:42.822 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_LPF_ROLL      = 25
+[2026-05-15 19:55:42.827 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_LPF_PAN       = 25
+[2026-05-15 19:55:42.829 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_SPD_TILT      = 30
+[2026-05-15 19:55:42.831 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_SPD_ROLL      = 30
+[2026-05-15 19:55:42.835 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_SPD_PAN       = 30
+[2026-05-15 19:55:42.838 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_LIM_MIN_TILT      = -120
+[2026-05-15 19:55:42.841 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_LIM_MAX_TILT      = 120
+[2026-05-15 19:55:42.846 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_LIM_MIN_ROLL      = -45
+[2026-05-15 19:55:42.846 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_LIM_MAX_ROLL      = 45
+[2026-05-15 19:55:42.850 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_LIM_MIN_PAN       = -325
+[2026-05-15 19:55:42.853 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_LIM_MAX_PAN       = 325
+[2026-05-15 19:55:42.856 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: TILT_DAMPING         = 20
+[2026-05-15 19:55:42.859 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: ROLL_DAMPING         = 15
+[2026-05-15 19:55:42.865 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: PAN_DAMPING          = 20
+[2026-05-15 19:55:42.865 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: GYRO_TRUST           = 220
+[2026-05-15 19:55:42.868 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: GMB_HOME_PAN          = 0
+[2026-05-15 19:55:42.871 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: MAPPING_ANGLE         = 90
+[2026-05-15 19:55:42.874 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_DZONE_TILT        = 0
+[2026-05-15 19:55:42.877 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_DZONE_ROLL        = 0
+[2026-05-15 19:55:42.881 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_DZONE_PAN         = 0
+[2026-05-15 19:55:42.883 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_MODE_TILT         = 1
+[2026-05-15 19:55:42.886 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_MODE_ROLL         = 0
+[2026-05-15 19:55:42.890 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_MODE_PAN          = 1
+[2026-05-15 19:55:42.893 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_TRIM_TILT         = 0
+[2026-05-15 19:55:42.896 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_TRIM_ROLL         = 0
+[2026-05-15 19:55:42.898 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_CHAN_STILT        = 2
+[2026-05-15 19:55:42.901 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_CHAN_SPAN         = 2
+[2026-05-15 19:55:42.904 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_CHAN_TILT         = 1
+[2026-05-15 19:55:42.908 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_CHAN_ROLL         = 7
+[2026-05-15 19:55:42.910 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_CHAN_PAN          = 0
+[2026-05-15 19:55:42.914 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_CHAN_MODE         = 6
+[2026-05-15 19:55:42.917 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_TYPE              = 15
+[2026-05-15 19:55:42.920 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: RC_REVERSE_AXIS      = 0
+[2026-05-15 19:55:42.923 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: MAV_EMIT_HB          = 1
+[2026-05-15 19:55:42.926 INFO] (Gimbals.Gremsy_T7.Gimbal): Set: MAV_TS_ENCNT         = 0
+[2026-05-15 19:55:42.926 INFO] (Gimbals.Gremsy_T7.Gimbal): Initializing goto state
+[2026-05-15 19:55:42.930 INFO] (root): Starting drone telemetry logging...
+[2026-05-15 19:55:42.930 INFO] (Drones.DJI_M600.Drone): Starting telemetry reception...
+[2026-05-15 19:55:42.931 INFO] (Drones.DJI_M600.Drone): Logging raw telemetry data to data/flight_controller_20260515_195540/drone_telemetry.bin
+[2026-05-15 19:55:42.931 INFO] (root): Starting gimbal telemetry logging...
+[2026-05-15 19:55:42.931 INFO] (Gimbals.Gremsy_T7.Gimbal): Starting gimbal telemetry logging...
+[2026-05-15 19:57:09.942 INFO] (root): Stopping drone telemetry logging...
+[2026-05-15 19:57:09.943 INFO] (Drones.DJI_M600.Drone): Stopping telemetry reception...
+[2026-05-15 19:57:09.962 INFO] (Drones.DJI_M600.Drone): Telemetry reception stopped.
+[2026-05-15 19:57:09.963 INFO] (root): Stopping gimbal telemetry logging...
+[2026-05-15 19:57:09.963 INFO] (Gimbals.Gremsy_T7.Gimbal): Stopping gimbal telemetry logging...
+[2026-05-15 19:57:09.963 INFO] (Gimbals.Gremsy_T7.Gimbal): Writing remaining 84 telemetry messages to file...
+[2026-05-15 19:57:09.965 INFO] (root): Telemetry logging stopped. Data saved to: data/flight_controller_20260515_195540
+[2026-05-15 19:57:09.965 INFO] (root): Disconnecting from drone...
+[2026-05-15 19:57:09.965 INFO] (Drones.DJI_M600.connection): Disconnected from drone.
+[2026-05-15 19:57:09.965 INFO] (root): Disconnecting from gimbal...
+[2026-05-15 19:57:09.969 INFO] (Gimbals.Gremsy_T7.Gimbal): Disconnected from gimbal
+[2026-05-15 19:57:10.770 INFO] (root): Disconnected.

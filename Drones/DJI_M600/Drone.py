@@ -20,7 +20,7 @@ import Drones.DJI_M600.telemetry_state as telemetry_state
 # use the Controller.py logging configuration
 logger = logging.getLogger(__name__)
 
-class Telemetry:
+class Drone:
     def __init__(self, port: str= params.DEFAULT_SERIAL_PORT, 
                  baudrate: int = params.DEFAULT_BAUDRATE,
                  timeout: float = params.SERIAL_TIMEOUT,
@@ -100,12 +100,12 @@ class Telemetry:
                 self.log_queue.put((timestamp, frame))
 
                 # decode broadcast frames and update shared display state
-                f = self.parse_frame(frame)
+                f = utils.parse_frame(frame)
                 if f:
                     if (not f['is_ack'] and f['crc32_ok']
                             and f['cmd_set'] == params.CMD_SET_BROADCAST
                             and f['cmd_id'] == params.CMD_ID_BROADCAST):
-                        bd = self.decode_broadcast(f['payload'])
+                        bd = utils.decode_broadcast(f['payload'])
 
                         # update telemetry state
                         self.telemetry_state.update(bd)
@@ -114,56 +114,6 @@ class Telemetry:
             logger.error(f"Error in read loop: {e}")
             self.stop_event.set()
             self.disconnect()
-
-
-    def _write_loop(self):
-        """
-        Background thread to write incoming telemetry frames to disk in batches.
-        """
-        # create data file
-        if self.simulator:
-            data_filename = "drone_telemetry_simulator.bin"
-        else:
-            data_filename = f"drone_telemetry.bin"
-        data_filename = os.path.join(self.output_dir, data_filename)
-        logger.info(f"Logging raw telemetry data to {data_filename}")
-
-        write_buf = []
-        frame_count = 0
-
-        with open(data_filename, "wb") as f:
-            # drains the log_queue and writes to disk in batches until stop_event is set and queue is empty
-            while not self.stop_event.is_set() or not self.log_queue.empty():
-                try:
-                    timestamp, frame = self.log_queue.get(timeout=0.1)
-
-                    write_buf.append(struct.pack('<dI', timestamp, len(frame)))  # 8 bytes for timestamp + 4 bytes for frame length
-                    write_buf.append(frame)
-                    
-                    frame_count += 1
-
-                    if len(write_buf) >= params.BATCH_SIZE:
-                        f.write(b''.join(write_buf))
-                        write_buf.clear()
-
-                    if frame_count % params.FLUSH_EVERY == 0:
-                        f.flush()
-                        logger.debug(f"Flushed {frame_count} frames to disk")
-            
-                except Exception as e:
-                    if isinstance(e, queue.Empty):
-                        continue
-                    else:
-                        logger.error(f"Error in write loop: {e}")
-                        self.stop_event.set()
-                        self.disconnect()
-                        break
-
-            # flush any remaining frames
-            if write_buf:
-                f.write(b''.join(write_buf))
-                f.flush()
-                logger.debug(f"Flushed final {len(write_buf)} frames to disk")
 
     def _read_loop_sim(self):
         
@@ -246,6 +196,52 @@ class Telemetry:
             # Simulate frame rate (e.g., 50 Hz)
             time.sleep(1 / self.telemetry_frequency)
             tick += 1
+
+    def _write_loop(self):
+        """
+        Background thread to write incoming telemetry frames to disk in batches.
+        """
+        # create data file
+        data_filename = params.TELEMETRY_FILENAME
+        data_filename = os.path.join(self.output_dir, data_filename)
+        logger.info(f"Logging raw telemetry data to {data_filename}")
+
+        write_buf = []
+        frame_count = 0
+
+        with open(data_filename, "wb") as f:
+            # drains the log_queue and writes to disk in batches until stop_event is set and queue is empty
+            while not self.stop_event.is_set() or not self.log_queue.empty():
+                try:
+                    timestamp, frame = self.log_queue.get(timeout=0.1)
+
+                    write_buf.append(struct.pack('<dI', timestamp, len(frame)))  # 8 bytes for timestamp + 4 bytes for frame length
+                    write_buf.append(frame)
+                    
+                    frame_count += 1
+
+                    if len(write_buf) >= params.BATCH_SIZE:
+                        f.write(b''.join(write_buf))
+                        write_buf.clear()
+
+                    if frame_count % params.FLUSH_EVERY == 0:
+                        f.flush()
+                        logger.debug(f"Flushed {frame_count} frames to disk")
+            
+                except Exception as e:
+                    if isinstance(e, queue.Empty):
+                        continue
+                    else:
+                        logger.error(f"Error in write loop: {e}")
+                        self.stop_event.set()
+                        self.disconnect()
+                        break
+
+            # flush any remaining frames
+            if write_buf:
+                f.write(b''.join(write_buf))
+                f.flush()
+                logger.debug(f"Flushed final {len(write_buf)} frames to disk")
 
     def start_telemetry(self):
         """
@@ -492,7 +488,7 @@ class Telemetry:
                 if off in seen:
                     continue
                 seen.add(off)
-                f = self.parse_frame(raw)
+                f = utils.parse_frame(raw)
                 if f['is_ack']:
                     rc = (struct.unpack_from('<H', f['payload'], 0)[0]
                         if len(f['payload']) >= 2 else None)
@@ -543,177 +539,6 @@ class Telemetry:
                 i = idx + 1; continue
             yield idx, frame
             i = idx + length
-
-    def parse_frame(self, raw: bytes) -> dict:
-        """
-        Decode a validated frame into a dict.
-        
-        Parameters:
-        -----------
-        raw: bytes
-            The raw bytes of a validated DJI OSDK frame to be parsed into a dictionary format.
-        
-        Returns:
-        --------
-        dict
-            A dictionary containing the parsed information from the frame, including:
-            - 'length': The total length of the frame.
-            - 'is_ack': A boolean indicating whether the frame is an ACK.
-            - 'seq': The sequence number extracted from the frame.
-            - 'cmd_set': The command set identifier (None for ACK frames).
-            - 'cmd_id': The command identifier (None for ACK frames).
-            - 'payload': The payload data extracted from the frame.
-            - 'crc32_ok': A boolean indicating whether the CRC32 checksum is valid.
-            - 'raw': The original raw bytes of the frame.
-        """
-        w0     = struct.unpack_from('<I', raw, 0)[0]
-        length = (w0 >> 8) & 0x3FF
-        is_ack = bool((w0 >> 29) & 1)
-        seq    = struct.unpack_from('<H', raw, 8)[0]
-        crc32_ok = (utils.crc32(raw[:length - params.CRC32_LEN]) ==
-                    struct.unpack_from('<I', raw, length - params.CRC32_LEN)[0])
-        if is_ack:
-            cmd_set, cmd_id = None, None
-            payload = raw[params.HEADER_LEN : length - params.CRC32_LEN]
-        else:
-            cmd_set = raw[params.HEADER_LEN]
-            cmd_id  = raw[params.HEADER_LEN + 1]
-            payload = raw[params.HEADER_LEN + 2 : length - params.CRC32_LEN]
-        return {
-            'length': length, 'is_ack': is_ack, 'seq': seq,
-            'cmd_set': cmd_set, 'cmd_id': cmd_id,
-            'payload': payload, 'crc32_ok': crc32_ok, 'raw': raw,
-        }
-
-    def decode_broadcast(self, data: bytes) -> dict | None:
-        """
-        Decode a cmd=0x02/0x00 broadcast payload (bytes after cmd_set/cmd_id).
-
-        Returns a dict with all telemetry fields, or None if the payload is too short.
-        Two frame types are handled:
-        - flag=0x07FF / 0x0FFF  : full telemetry (263 or 267 bytes)
-        - flag=0x3000           : battery + SDKInfo only (17 bytes)
-        """
-        if len(data) < 4:
-            return None
-
-        flag = struct.unpack_from('<H', data, params.OFF_FLAG)[0]
-
-        # battery + device only (0x3000)
-        if flag == (params.FLAG_BATTERY | params.FLAG_DEVICE):
-            if len(data) < params.OFF_SDK + 2:
-                return None
-            bat_cap, bat_v, bat_i, bat_pct = struct.unpack_from('<IiiB', data, params.OFF_BAT)
-            sdk_ctrl, sdk_dev = struct.unpack_from('<BB', data, params.OFF_SDK)
-            return {
-                'flag':             flag,
-                'bat_capacity_mah': bat_cap,
-                'bat_voltage_mv':   bat_v,
-                'bat_current_ma':   bat_i,
-                'bat_percentage':   bat_pct,
-                'sdk_control_mode': sdk_ctrl,
-                'sdk_device_bits':  sdk_dev,
-            }
-
-        # standard telemetry (0x07FF or 0x0FFF)
-        if len(data) < params.OFF_STATUS:
-            return None
-
-        t_ticks = struct.unpack_from('<I', data, params.OFF_TMS)[0]
-        t_ns    = struct.unpack_from('<I', data, params.OFF_TNS)[0]
-
-        q0, q1, q2, q3 = struct.unpack_from('<4f', data, params.OFF_Q)
-        roll, pitch, yaw = utils.quat_to_euler(q0, q1, q2, q3)
-        qmag = math.sqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3)
-
-        ax, ay, az   = struct.unpack_from('<3f', data, params.OFF_A)
-        vx, vy, vz   = struct.unpack_from('<3f', data, params.OFF_V)
-        vel_info      = data[params.OFF_VI]
-        gx, gy, gz   = struct.unpack_from('<3f', data, params.OFF_W)
-
-        lat_rad = struct.unpack_from('<d', data, params.OFF_LAT)[0]
-        lon_rad = struct.unpack_from('<d', data, params.OFF_LON)[0]
-        alt_m   = struct.unpack_from('<f', data, params.OFF_ALT)[0]
-        hgt_m   = struct.unpack_from('<f', data, params.OFF_HGT)[0]
-        gps_h   = data[params.OFF_GPSH]
-
-        rp_down, rp_front, rp_right, rp_back, rp_left, rp_up = \
-            struct.unpack_from('<6f', data, params.OFF_RP)
-
-        gps_date, gps_time_hhmmss = struct.unpack_from('<II', data, params.OFF_GPS_DATE)
-        gps_lon_raw, gps_lat_raw, gps_hfsl_mm = struct.unpack_from('<3i', data, params.OFF_GPS_LON)
-        gps_vn, gps_ve, gps_vd = struct.unpack_from('<3f', data, params.OFF_GPS_VEL)
-        hdop, pdop  = struct.unpack_from('<2f', data, params.OFF_GPS_DTL)
-        gps_nsv     = struct.unpack_from('<H', data, params.OFF_GPS_DTL + 32)[0]
-
-        rtk_lon, rtk_lat = struct.unpack_from('<2d', data, params.OFF_RTK + 8)
-        rtk_hfsl         = struct.unpack_from('<f',  data, params.OFF_RTK + 24)[0]
-        rtk_yaw          = struct.unpack_from('<h',  data, params.OFF_RTK + 40)[0]
-        rtk_pos_health   = data[params.OFF_RTK + 42]
-        rtk_yaw_health   = data[params.OFF_RTK + 43]
-
-        mx, my, mz = struct.unpack_from('<3h', data, params.OFF_MX)
-
-        rc_roll, rc_pitch, rc_yaw, rc_thr, rc_mode, rc_gear = \
-            struct.unpack_from('<6h', data, params.OFF_RC)
-
-        gim_roll, gim_pitch, gim_yaw = struct.unpack_from('<3f', data, params.OFF_GIMBAL)
-        gim_flags = data[params.OFF_GIMBAL + 12]
-
-        out = {
-            'flag':     flag,
-            't_ticks':  t_ticks,
-            't_ns':     t_ns,
-            'q':        (q0, q1, q2, q3),
-            'qmag':     qmag,
-            'roll':     roll,
-            'pitch':    pitch,
-            'yaw':      yaw,
-            'ax': ax,   'ay': ay,   'az': az,
-            'vx': vx,   'vy': vy,   'vz': vz,
-            'vel_info': vel_info,
-            'gx': gx,   'gy': gy,   'gz': gz,
-            'lat_deg':    math.degrees(lat_rad),
-            'lon_deg':    math.degrees(lon_rad),
-            'alt_m':      alt_m,
-            'hgt_m':      hgt_m,
-            'gps_health': gps_h,
-            'rp_down':  rp_down,  'rp_front': rp_front,  'rp_right': rp_right,
-            'rp_back':  rp_back,  'rp_left':  rp_left,   'rp_up':    rp_up,
-            'gps_date':    gps_date,
-            'gps_time':    gps_time_hhmmss,
-            'gps_lon_deg': gps_lon_raw / 1e7,
-            'gps_lat_deg': gps_lat_raw / 1e7,
-            'gps_hfsl_m':  gps_hfsl_mm / 1000.0,
-            'gps_vn_cms':  gps_vn,
-            'gps_ve_cms':  gps_ve,
-            'gps_vd_cms':  gps_vd,
-            'hdop': hdop,  'pdop': pdop,  'gps_nsv': gps_nsv,
-            'rtk_lon_deg':    rtk_lon,
-            'rtk_lat_deg':    rtk_lat,
-            'rtk_hfsl_m':     rtk_hfsl,
-            'rtk_yaw_deg':    rtk_yaw * 0.1,
-            'rtk_pos_health': rtk_pos_health,
-            'rtk_yaw_health': rtk_yaw_health,
-            'mx': mx,  'my': my,  'mz': mz,
-            'rc_roll':  rc_roll,  'rc_pitch': rc_pitch,
-            'rc_yaw':   rc_yaw,   'rc_thr':   rc_thr,
-            'rc_mode':  rc_mode,  'rc_gear':  rc_gear,
-            'gim_roll': gim_roll,  'gim_pitch': gim_pitch,
-            'gim_yaw':  gim_yaw,   'gim_flags': gim_flags,
-        }
-
-        if (flag & params.FLAG_STATUS) and len(data) >= params.OFF_STATUS + 4:
-            fl_status, fl_mode, fl_gear, fl_error = \
-                struct.unpack_from('<4B', data, params.OFF_STATUS)
-            out.update({
-                'flight_status': fl_status,
-                'display_mode':  fl_mode,
-                'landing_gear':  fl_gear,
-                'flight_error':  fl_error,
-            })
-
-        return out
     
     def render_artificial_horizon_panel(self, pitch_deg, roll_deg, width=33, height=11):
         """

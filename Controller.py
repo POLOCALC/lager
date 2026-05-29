@@ -80,6 +80,9 @@ class Controller:
         # get gimbal type and configuration
         self.gimbal = self.get_gimbal()
 
+        # get POI object if configured
+        self.poi = None
+
         # start display if enabled in configuration
         if display_enabled:
             if self.drone is not None:
@@ -94,9 +97,6 @@ class Controller:
 
             display_thread = threading.Thread(target=cli.live_display, args=(self.drone_panel, self.gimbal_panel, logging_file, refresh_rate))
             display_thread.start()
-
-        # POI object
-        self.poi = None
 
 
     def get_drone(self) -> object:
@@ -138,12 +138,12 @@ class Controller:
         
         # check if the drone type is supported
         if name == 'DJI M600':
-            drone = DJI_M600.Telemetry(port=connection_port,
-                                       baudrate=connection_baudrate,
-                                       timeout=connection_timeout,
-                                       telemetry_frequency=telemetry_frequency,
-                                       simulator=simulator,
-                                       output_dir=self.data_folder)
+            drone = DJI_M600.Drone(port=connection_port,
+                                   baudrate=connection_baudrate,
+                                   timeout=connection_timeout,
+                                   telemetry_frequency=telemetry_frequency,
+                                   simulator=simulator,
+                                   output_dir=self.data_folder)
             return drone
         
         else:

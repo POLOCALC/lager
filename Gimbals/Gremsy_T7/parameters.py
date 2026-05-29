@@ -13,7 +13,9 @@ MESSAGE_POLL_FREQUENCY  = 100  # adjust according to the expected message rates 
                                # but you can set it lower to reduce CPU usage if you only care about 
                                # low-rate messages
 
-TELEMETRY_LOG_BUFFER    = 100  # number of messages to store in the telemetry log buffer before writing to file
+TELEMETRY_DATA_BUFFER    = 100                    # number of messages to store in the telemetry log  
+                                                  # buffer before writing to file
+TELEMETRY_FILENAME       = "gimbal_telemetry.bin" # filename for telemetry log (binary format)
 
 DEFAULT_MAV_RATE_ORIEN   = 10  # MOUNT_ORIENTATION rate             [Hz]
 DEFAULT_MAV_RATE_IMU     = 10  # RAW_IMU rate                       [Hz]

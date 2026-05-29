@@ -7,6 +7,7 @@ ACK_TIMEOUT = 3.0                     # seconds
 
 # telemetry frequency
 TELEMETRY_FREQ = 50  # Hz
+TELEMETRY_FILENAME = "drone_telemetry.bin"  # filename for telemetry log (binary format)
 
 
 # SDK control mode bit masks (from DJI OSDK dji_broadcast.hpp)

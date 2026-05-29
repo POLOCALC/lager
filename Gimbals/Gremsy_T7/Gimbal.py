@@ -75,16 +75,12 @@ class Gimbal:
         self.message_intervals = {}
 
         # buffer for recording data to file
-        self._telemetry_log_buffer = []
+        self._telemetry_data_buffer = []
 
         # filename for telemetry log
-        if self.simulator:
-            logger.info("Lab test simulator mode enabled - no serial connection will be made.")
-            self.telemetry_log_filename = "gimbal_telemetry_simulator.bin"
-        else:
-            self.telemetry_log_filename = "gimbal_telemetry.bin"
-        self.telemetry_log_filename = os.path.join(self.output_dir, self.telemetry_log_filename)
-        logger.info(f"Telemetry log will be saved to: {self.telemetry_log_filename}")
+        self.telemetry_data_filename = params.TELEMETRY_FILENAME
+        self.telemetry_data_filename = os.path.join(self.output_dir, self.telemetry_data_filename)
+        logger.info(f"Telemetry log will be saved to: {self.telemetry_data_filename}")
 
         # desired movement speed (deg/s); None means use the gimbal's default speed
         self.yaw_speed   = None
@@ -96,7 +92,7 @@ class Gimbal:
 
         # telemetry state
         self.telemetry_state = telemetry_state.TelemetryState()
-        self._log_telemetry_flag = False
+        self._save_telemetry_flag = False
 
     def start_telemetry(self):
         """
@@ -104,19 +100,19 @@ class Gimbal:
         in the update thread as it is received.
         """
         logger.info("Starting gimbal telemetry logging...")
-        self._log_telemetry_flag = True
+        self._save_telemetry_flag = True
 
     def stop_telemetry(self):
         """
         Stop logging telemetry data by setting the flag to False. Any remaining data in the log
         buffer will be written to file.
         """
-        if self._log_telemetry_flag:
+        if self._save_telemetry_flag:
             logger.info("Stopping gimbal telemetry logging...")
-            self._log_telemetry_flag = False
-            if self._telemetry_log_buffer:
-                logger.info(f"Writing remaining {len(self._telemetry_log_buffer)} telemetry messages to file...")
-                self._write_telemetry_log()
+            self._save_telemetry_flag = False
+            if self._telemetry_data_buffer:
+                logger.info(f"Writing remaining {len(self._telemetry_data_buffer)} telemetry messages to file...")
+                self._write_telemetry_data()
 
     def send_heartbeat(self):
         """
@@ -432,35 +428,35 @@ class Gimbal:
         logger.warning(f"Gimbal did not stop within {timeout} seconds")
         return False
     
-    def log_telemetry(self, message_dict: dict):
+    def _add_telemetry_to_buffer(self, message_dict: dict):
         """
-        Add a telemetry message dictionary to the log buffer and write to file if the buffer exceeds the configured size.
+        Add a telemetry message dictionary to the data buffer and write to file if the buffer exceeds the configured size.
 
         Parameters:
         -----------
             message_dict : dict
                 A dictionary containing telemetry data to be logged.
         """
-        self._telemetry_log_buffer.append(message_dict)
-        if len(self._telemetry_log_buffer) >= params.TELEMETRY_LOG_BUFFER:
-            self._write_telemetry_log()
+        self._telemetry_data_buffer.append(message_dict)
+        if len(self._telemetry_data_buffer) >= params.TELEMETRY_DATA_BUFFER:
+            self._write_telemetry_data()
 
-    def _write_telemetry_log(self):
+    def _write_telemetry_data(self):
         """
-        Write the contents of the telemetry log buffer to a binary file using the pickle module.
+        Write the contents of the telemetry data buffer to a binary file using the pickle module.
         """
-        if not self._telemetry_log_buffer:
-            logger.debug(f"Empty telemetry log buffer, nothing to write to {self.telemetry_log_filename}")
+        if len(self._telemetry_data_buffer) == 0:
+            logger.debug(f"Empty telemetry data buffer, nothing to write to {self.telemetry_data_filename}")
             return
         
         try:
-            with open(self.telemetry_log_filename, 'ab') as f:
-                pickle.dump(self._telemetry_log_buffer, f)
-                self._telemetry_log_buffer.clear()
-                logger.debug(f"Telemetry log written to {self.telemetry_log_filename}")
+            with open(self.telemetry_data_filename, 'ab') as f:
+                pickle.dump(self._telemetry_data_buffer, f)
+                self._telemetry_data_buffer.clear()
+                logger.debug(f"Telemetry data written to {self.telemetry_data_filename}")
         except Exception as e:
-            logger.error(f"Failed to write telemetry log: {e}")
-    
+            logger.error(f"Failed to write telemetry data: {e}")
+
     def update_status_simulator(self):
         """
         Simulated status update loop for testing without a real gimbal connection. This method
@@ -560,11 +556,11 @@ class Gimbal:
     def _handle_attitude_status(self, d):
         """Store the latest GIMBAL_DEVICE_ATTITUDE_STATUS message payload."""
         logger.debug(f"Received GIMBAL_DEVICE_ATTITUDE_STATUS")
-        if self._log_telemetry_flag:
+        if self._save_telemetry_flag:
             timestamp = time.time()
-            self.log_telemetry({
+            self._add_telemetry_to_buffer({
                 "timestamp": timestamp,
-                "keykord": kw.GIMBAL_DEVICE_ATTITUDE_STATUS_KEYWORD,
+                "keyword": kw.GIMBAL_DEVICE_ATTITUDE_STATUS_KEYWORD,
                 "data": d
             })
         self.attitude = d
@@ -573,11 +569,11 @@ class Gimbal:
     def _handle_mount_orientation(self, d):
         """Store the latest MOUNT_ORIENTATION message payload."""
         logger.debug(f"Received MOUNT_ORIENTATION")
-        if self._log_telemetry_flag:
+        if self._save_telemetry_flag:
             timestamp = time.time()
-            self.log_telemetry({
+            self._add_telemetry_to_buffer({
                 "timestamp": timestamp,
-                "keykord": kw.MOUNT_ORIENTATION_KEYWORD,
+                "keyword": kw.MOUNT_ORIENTATION_KEYWORD,
                 "data": d
             })
         self.orientation = d
@@ -585,11 +581,11 @@ class Gimbal:
     def _handle_raw_imu(self, d):
         """Store the latest RAW_IMU message payload."""
         logger.debug(f"Received RAW_IMU")
-        if self._log_telemetry_flag:
+        if self._save_telemetry_flag:
             timestamp = time.time()
-            self.log_telemetry({
+            self._add_telemetry_to_buffer({
                 "timestamp": timestamp,
-                "keykord": kw.RAW_IMU_KEYWORD,
+                "keyword": kw.RAW_IMU_KEYWORD,
                 "data": d
             })
         self.raw_imu = d
@@ -598,11 +594,11 @@ class Gimbal:
     def _handle_mount_status(self, d):
         """Store the latest MOUNT_STATUS message payload."""
         logger.debug(f"Received MOUNT_STATUS")
-        if self._log_telemetry_flag:
+        if self._save_telemetry_flag:
             timestamp = time.time()
-            self.log_telemetry({
+            self._add_telemetry_to_buffer({
                 "timestamp": timestamp,
-                "keykord": kw.MOUNT_STATUS_KEYWORD,
+                "keyword": kw.MOUNT_STATUS_KEYWORD,
                 "data": d
             })
         self.mount_status = d
@@ -611,11 +607,11 @@ class Gimbal:
     def _handle_sys_status(self, d):
         """Store the latest SYS_STATUS message payload."""
         logger.debug(f"Received SYS_STATUS")
-        if self._log_telemetry_flag:
+        if self._save_telemetry_flag:
             timestamp = time.time()
-            self.log_telemetry({
+            self._add_telemetry_to_buffer({
                 "timestamp": timestamp,
-                "keykord": kw.SYS_STATUS_KEYWORD,
+                "keyword": kw.SYS_STATUS_KEYWORD,
                 "data": d
             })
         self.sys_status = d
@@ -624,11 +620,11 @@ class Gimbal:
     def _handle_heartbeat(self, d):
         """Store the latest HEARTBEAT message payload."""
         logger.debug(f"Received HEARTBEAT")
-        if self._log_telemetry_flag:
+        if self._save_telemetry_flag:
             timestamp = time.time()
-            self.log_telemetry({
+            self._add_telemetry_to_buffer({
                 "timestamp": timestamp,
-                "keykord": kw.HEARTBEAT_KEYWORD,
+                "keyword": kw.HEARTBEAT_KEYWORD,
                 "data": d
             })
         self.heartbeat_dict = d
@@ -645,11 +641,11 @@ class Gimbal:
         Store received PARAM_VALUE messages in a dictionary keyed by param_id string for 
         retrieval by _fetch_param().
         """
-        if self._log_telemetry_flag:
+        if self._save_telemetry_flag:
             timestamp = time.time()
-            self.log_telemetry({
+            self._add_telemetry_to_buffer({
                 "timestamp": timestamp,
-                "keykord": kw.PARAM_VALUE_KEYWORD,
+                "keyword": kw.PARAM_VALUE_KEYWORD,
                 "data": d
             })
         param_id = d.get('param_id', '').rstrip('\x00')
