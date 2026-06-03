@@ -1,0 +1,8 @@
+pandas
+matplotlib
+numpy 
+pymavlink
+pyserial
+pyyaml
+pymap3d
+rich

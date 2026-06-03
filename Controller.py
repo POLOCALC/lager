@@ -81,7 +81,7 @@ class Controller:
         self.gimbal = self.get_gimbal()
 
         # get POI object if configured
-        self.poi = None
+        self.poi = self.get_POI()
 
         # start display if enabled in configuration
         if display_enabled:
@@ -268,10 +268,10 @@ class Controller:
         logging.info("Telemetry logging stopped. Data saved to: " + self.data_folder)
 
 
-    def set_POI(self):
+    def get_POI(self):
         # check if POI is configured
         if 'POI' not in self.config:
-            logging.warning("Configuration file is missing 'POI' section.")
+            logging.warning("No 'POI' section found in configuration. POI tracking will be disabled.")
             self.poi = None
             return None
         
@@ -290,14 +290,12 @@ class Controller:
             logging.warning("POI configuration is missing 'latitude', 'longitude', or 'altitude' fields.")
             self.poi = None
             return None
+        if 'max_distance' in self.config['POI']:
+            max_distance = self.config['POI']['max_distance']
+            logging.info(f"POI max distance: {max_distance} meters")
+        else:
+            logging.warning("POI configuration is missing 'max_distance' field.")
+            max_distance = None
         
-        self.poi = POI.POI(name, latitude, longitude, altitude)
-    
-    def get_drone_data(self):
-        return None
-    
-    def get_gimbal_data(self):
-        return None
-    
-    def get_logs(self):
-        return None
+        poi = POI.POI(name, latitude, longitude, altitude, max_distance)
+        return poi

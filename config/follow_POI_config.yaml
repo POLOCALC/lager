@@ -34,3 +34,4 @@ POI:
   latitude: 37.7749
   longitude: -122.4194
   altitude: 30.0
+  max_distance: 700.0  # meters

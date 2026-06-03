@@ -1,6 +1,6 @@
-import json
 import struct
 import os
+from pandas import DataFrame
 
 import Drones.DJI_M600.parameters as params
 import Drones.DJI_M600.utils as utils
@@ -57,20 +57,32 @@ class DataLoader:
 
     def parse_raw_data(self, raw_data):
         # raw data is a list of dictionaries with different commands keywords and telemetry data
-        parsed_data = {"timestamp": [],
-                       "data": []}
+        parsed_data = []
 
         for item in raw_data:
-            parsed_data["timestamp"].append(item[0])
-            parsed_data["data"].append(item[1])
+            timestamp = item[0]
+            if item[1]['is_ack']:
+                continue
+            if item[1]['cmd_set'] == 0x02 and item[1]['cmd_id'] == 0x00:
+                decoded = utils.decode_broadcast(item[1]['payload'])
+                if decoded is not None:
+                    parsed_data.append({'timestamp': timestamp, 'data': decoded})
 
-        return parsed_data
+        df_line = []
+        for item in parsed_data:
+            line = {'timestamp': item['timestamp']}
+            line.update(item['data'])
+            df_line.append(line)
+
+        df = DataFrame(df_line)
+
+        return df
 
     def get_data(self):
         raw_data = self.load_raw_data()
         if raw_data is None:
             return None
         
-        parsed_data = self.parse_raw_data(raw_data)
+        data = self.parse_raw_data(raw_data)
 
-        return parsed_data
+        return data

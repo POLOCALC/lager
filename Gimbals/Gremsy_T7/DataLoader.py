@@ -1,6 +1,6 @@
 import pickle
-import json
 import os
+from pandas import DataFrame
 
 import Gimbals.Gremsy_T7.parameters as params
 
@@ -38,29 +38,22 @@ class DataLoader:
 
     def parse_raw_data(self, raw_data):
         # raw data is a list of dictionaries with different commands keywords and telemetry data
-        parsed_data = {}
-
+        df_line = []
         for item in raw_data:
-            keyword = item.get("keyword")
-            if keyword not in parsed_data:
-                parsed_data[keyword] = {}
-                parsed_data[keyword]["timestamp"] = []
-                for key in item["data"].keys():
-                    parsed_data[keyword][key] = []
+            line = {'timestamp': item['timestamp'], 
+                    'keyword': item['keyword']}
+            line.update(item['data'])
+            df_line.append(line)
 
-            parsed_data[keyword]["timestamp"].append(item["timestamp"])
-            for key in item["data"].keys():
-                try:
-                    parsed_data[keyword][key].append(item["data"][key])
-                except KeyError:
-                    print(f"Key {key} not found in item: {keyword} at timestamp {item['timestamp']}")
+        df = DataFrame(df_line)
 
-        return parsed_data
+        return df
 
     def get_data(self):
         raw_data = self.load_raw_data()
         if raw_data is None:
             return None
         
-        parsed_data = self.parse_raw_data(raw_data)
-        return parsed_data
+        data = self.parse_raw_data(raw_data)
+
+        return data
