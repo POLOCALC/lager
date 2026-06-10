@@ -27,7 +27,7 @@ class Controller:
             self.led = None
 
         # create timestamp
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        timestamp = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
 
         # create data folder
         self.data_folder = f"{params.DATA_FOLDER_PREFIX}_{timestamp}"
@@ -36,8 +36,7 @@ class Controller:
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
 
-        # create logging file
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        # configure logging
         logging_file = os.path.join(self.data_folder, params.LOGGING_FILE_NAME)
         logging.basicConfig(level=LOGGING_LEVEL, format=params.LOGGING_FORMAT, datefmt=params.LOGGING_DATEFMT, handlers=[
             logging.FileHandler(logging_file)
