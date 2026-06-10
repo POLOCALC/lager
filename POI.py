@@ -38,10 +38,13 @@ class POI():
 
             self.current_distance = self.distance(uav_lat, uav_lon, uav_alt)
             if self.current_distance > self.max_distance:
-                logger.debug(f"POI {self.name} is out of range (distance: {self.current_distance:.2f} m). Not tracking.")
-                time.sleep(1)  # check again in 1 second
+                logger.info(f"POI {self.name} is out of range (distance: {self.current_distance:.2f} m). Not tracking.")
+                self.is_tracking = False
+                time.sleep(5)  # check again in 5 seconds
                 continue
             else:
+                self.is_tracking = True
+
                 # compute gimbal corrections to point at the POI
                 if forward_heading:
                     gimbal_yaw = 0.0

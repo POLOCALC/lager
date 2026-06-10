@@ -33,6 +33,13 @@ class DataLoader:
                             break
                         frame_length = struct.unpack('I', frame_length_bytes)[0]
 
+                        # skip invalid zero-length or impossibly short frames that can
+                        # appear when the controller is killed mid-write; cannot resync
+                        # to the next frame boundary, so stop reading
+                        if frame_length < params.PKG_MIN:
+                            print(f"Stopping: invalid frame length {frame_length} (minimum is {params.PKG_MIN}).")
+                            break
+
                         # read the frame data based on the frame length
                         frame_data = f.read(frame_length)
                         if len(frame_data) < frame_length:

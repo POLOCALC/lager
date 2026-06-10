@@ -113,7 +113,7 @@ class Controller:
             else:
                 poi_data = lambda: None
 
-            display_thread = threading.Thread(target=cli.live_display, args=(self.drone_panel, self.gimbal_panel, logging_file, poi_data, refresh_rate))
+            display_thread = threading.Thread(target=cli.live_display, args=(self.drone_panel, self.gimbal_panel, logging_file, poi_data, refresh_rate), daemon=True)
             display_thread.start()
 
 

@@ -111,9 +111,10 @@ class Drone:
                         self.telemetry_state.update(bd)
 
         except Exception as e:
-            logger.error(f"Error in read loop: {e}")
+            if not self.stop_event.is_set():
+                logger.error(f"Error in read loop: {e}")
             self.stop_event.set()
-            self.disconnect()
+            self.connection.disconnect()
 
     def _read_loop_sim(self):
         
@@ -273,8 +274,12 @@ class Drone:
         """
         logger.info("Stopping telemetry reception...")
         self.stop_event.set()
-        self.telemetry_reader_thread.join()
-        self.telemetry_writer_thread.join()
+        # close the serial port to immediately unblock any pending serial.read()
+        # in the reader thread, rather than waiting up to SERIAL_TIMEOUT seconds
+        if not self.simulator:
+            self.connection.disconnect()
+        self.telemetry_reader_thread.join(timeout=5)
+        self.telemetry_writer_thread.join(timeout=5)
         logger.info("Telemetry reception stopped.")
 
     def connect(self):

@@ -86,9 +86,9 @@ class DataLoader:
         path_to_decoded_file = os.path.join(self.data_folder, params.DECODED_DATA_FILENAME)
         if os.path.exists(path_to_decoded_file):
             print(f"Warning: Decoded data file already exists at {path_to_decoded_file}.")
-            print(f"To overwrite it, set force_overwrite=True when calling save_data()")
             if not force_overwrite:
-                return
+                print(f"To overwrite it, set force_overwrite=True when calling save_data()")
+            return
 
         path_to_file = os.path.join(self.data_folder, params.DECODED_DATA_FILENAME)
 

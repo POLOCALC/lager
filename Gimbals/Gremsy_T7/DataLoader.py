@@ -21,6 +21,11 @@ class DataLoader:
                         data.append(pickle.load(f))
                     except EOFError:
                         break
+                    except Exception as e:
+                        # handles corrupted or partially-written pickle entries
+                        # (e.g. invalid load key '\x00' from a mid-write crash)
+                        print(f"Warning: corrupted entry in {path_to_file}, stopping read: {e}")
+                        break
         except FileNotFoundError:
             print(f"File not found: {path_to_file}")
             return None
