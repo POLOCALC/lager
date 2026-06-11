@@ -21,13 +21,14 @@ CRC32_LEN  = 4
 PKG_MIN    = HEADER_LEN + CRC32_LEN
 PKG_MAX    = 1024
 
-SERIAL_READ_SIZE = 4096   # bytes per ser.read() call
-BATCH_SIZE       = 50     # validated frames to accumulate before writing
-FLUSH_EVERY      = 200    # frames between f.flush() calls  (~2 s at 100 Hz)
+SERIAL_READ_SIZE  = 4096   # bytes per ser.read() call
+BATCH_SIZE        = 50     # validated frames to accumulate before writing
+FLUSH_EVERY       = 200    # frames between f.flush() calls  (~2 s at 100 Hz)
+LOG_QUEUE_MAXSIZE = 500    # max frames buffered in memory (~10 s at 50 Hz); older frames are dropped with a warning if the writer thread falls behind
 
 # timing constant
-# The M600/A3 FC runs at 400 Hz. The 't_ms' field in the broadcast payload is
-# NOT in milliseconds — it is a 400 Hz tick counter (1 tick = 2.5 ms).
+# the M600/A3 FC runs at 400 Hz, the 't_ms' field in the broadcast payload is
+# NOT in milliseconds, it is a 400 Hz tick counter (1 tick = 2.5 ms).
 FC_TICK_MS = 2.5   # ms per tick
 
 # broadcast frame identification

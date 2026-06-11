@@ -55,6 +55,9 @@ def log_panel(logs, lines=params.LOG_LINES_TO_SHOW):
     return Panel(log_text, title="[bold yellow]Most recent logs", border_style="yellow", title_align="left")
 
 def poi_panel(poi_data):
+    if poi_data is None:
+        return Panel(Text("No point of interest data available"), title="[bold cyan]Point of interest", border_style="cyan", title_align="left")
+    
     table = Table.grid(expand=True, padding=(0, -5))
     table.add_column(justify="left", style="bold yellow", no_wrap=False)
     table.add_column(justify="left", no_wrap=True)
@@ -66,13 +69,15 @@ def live_display(drone_panel=None, gimbal_panel=None, logfile=None, poi_data=Non
     layout = build_layout()
     with Live(layout, refresh_per_second=refresh_rate, screen=True):
         while True:
-            if drone_panel is not None:
-                layout["drone"].update(drone_panel())
-            if gimbal_panel is not None:
-                layout["gimbal"].update(gimbal_panel())
-            if logfile is not None:
-                layout["logs"].update(log_panel(get_logs_from_file(logfile), lines=params.LOG_LINES_TO_SHOW))
-            if poi_data is not None:
-                layout["poi"].update(poi_panel(poi_data()))
-            # Add sleep or event wait as needed
+            try:
+                if drone_panel is not None:
+                    layout["drone"].update(drone_panel())
+                if gimbal_panel is not None:
+                    layout["gimbal"].update(gimbal_panel())
+                if logfile is not None:
+                    layout["logs"].update(log_panel(get_logs_from_file(logfile), lines=params.LOG_LINES_TO_SHOW))
+                if poi_data is not None:
+                    layout["poi"].update(poi_panel(poi_data()))
+            except Exception:
+                pass  # never let a transient panel error crash the display thread
             time.sleep(1/refresh_rate)

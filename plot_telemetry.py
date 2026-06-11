@@ -103,8 +103,8 @@ def main():
     # battery
     clean_data = gimbal_data.dropna(subset=['voltage_battery'])
     time = clean_data['timestamp']-clean_data['timestamp'].iloc[0]
-    axs[2][1].plot(time, clean_data['voltage_battery'], label='Battery Voltage', color='blue')
-    axs[2][1].set_title('Gimbal Battery Voltage')
+    axs[2][1].plot(time, clean_data['voltage_battery'], label='Supply Voltage', color='blue')
+    axs[2][1].set_title('Gimbal Supply Voltage')
     axs[2][1].set_xlabel('Time [s]')
     axs[2][1].set_ylabel('Voltage [mV]')
     axs[2][1].legend()

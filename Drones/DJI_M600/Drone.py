@@ -20,6 +20,18 @@ import Drones.DJI_M600.telemetry_state as telemetry_state
 # use the Controller.py logging configuration
 logger = logging.getLogger(__name__)
 
+# Sub-cell block characters for artificial horizon smoothing.
+# Each tuple is (fill_fraction_upper_bound, character).
+# Characters fill from the bottom of the terminal cell upward.
+_HORIZON_BLOCKS_UNICODE = [
+    (0.125, "▁"), (0.25, "▂"), (0.375, "▃"), (0.5, "▄"),
+    (0.625, "▅"), (0.75, "▆"), (0.875, "▇"), (1.0, "█"),
+]
+_HORIZON_BLOCKS_ASCII = [
+    (0.125, "."), (0.25, ":"), (0.375, "-"), (0.5, "="),
+    (0.625, "+"), (0.75, "*"), (0.875, "#"), (1.0, "@"),
+]
+
 class Drone:
     def __init__(self, port: str= params.DEFAULT_SERIAL_PORT, 
                  baudrate: int = params.DEFAULT_BAUDRATE,
@@ -48,7 +60,7 @@ class Drone:
         self.telemetry_frequency = telemetry_frequency
 
         self.stop_event = threading.Event()
-        self.log_queue  = queue.Queue()   # unbounded - logger thread
+        self.log_queue  = queue.Queue(maxsize=params.LOG_QUEUE_MAXSIZE)
 
         # telemetry state
         self.telemetry_state = telemetry_state.TelemetryState()
@@ -58,6 +70,11 @@ class Drone:
         Background thread to read incoming telemetry frames from the serial port,
         decode them, and add them to a queue for writing to disk.
         """
+        # Bytes left over from a failed header parse. On a CRC16 mismatch we
+        # advance by exactly 1 byte instead of discarding the whole 12-byte
+        # read, so that a noise byte in the stream doesn't cause a long
+        # resync gap.
+        residual = b''
         try:
             while not self.stop_event.is_set():
                 # check if serial port is open before attempting to read
@@ -65,18 +82,27 @@ class Drone:
                     logger.error("Serial port not open. Exiting read loop.")
                     break
 
-                # read the header first to determine the total frame length
-                header = self.connection.serial.read(params.HEADER_LEN)
-                if len(header) < params.HEADER_LEN:
-                    logger.debug(f"Incomplete header received (got {len(header)} bytes), waiting for more data...")
-                    continue  # incomplete header
+                # fill header buffer, reusing leftover bytes from a previous mismatch
+                need = params.HEADER_LEN - len(residual)
+                if need > 0:
+                    chunk = self.connection.serial.read(need)
+                    if len(chunk) < need:
+                        residual += chunk
+                        logger.debug(f"Incomplete header received (got {len(residual)} bytes), waiting for more data...")
+                        continue
+                    header = residual + chunk
+                else:
+                    header = residual[:params.HEADER_LEN]
+                residual = b''
 
                 # validate CRC16 of the header (first 10 bytes, CRC stored at bytes 10-11)
                 stored_crc16 = struct.unpack_from('<H', header, 10)[0]
                 computed_crc16 = utils.crc16(header[:10])
                 if stored_crc16 != computed_crc16:
-                    logger.debug(f"Header CRC16 mismatch: stored=0x{stored_crc16:04X}, computed=0x{computed_crc16:04X}. Skipping frame.")
-                    continue  # invalid header, skip this frame
+                    # advance by 1 byte — keep header[1:] as the start of the next candidate
+                    logger.debug(f"Header CRC16 mismatch: stored=0x{stored_crc16:04X}, computed=0x{computed_crc16:04X}. Advancing 1 byte.")
+                    residual = header[1:]
+                    continue
 
                 # parse total frame length
                 w0 = struct.unpack_from('<I', header, 0)[0]
@@ -84,20 +110,30 @@ class Drone:
 
                 if total_len < params.HEADER_LEN + params.CRC32_LEN:
                     logger.debug(f"Invalid frame length received: {total_len}")
-                    continue  # invalid length
+                    residual = header[1:]
+                    continue
 
                 # read the rest of the frame based on the total length
                 rest = self.connection.serial.read(total_len - params.HEADER_LEN)
                 if len(rest) < (total_len - params.HEADER_LEN):
                     logger.debug(f"Incomplete frame received (got {len(rest)} bytes), waiting for more data...")
-                    continue  # incomplete frame
-                
+                    continue
+
                 # complete frame
                 timestamp = time.time()
                 frame = header + rest
 
-                # add validated frames and their timestamp to the queue for writing
-                self.log_queue.put((timestamp, frame))
+                # add validated frames and their timestamp to the queue for writing;
+                # drop the oldest frame with a warning if the writer thread is behind
+                try:
+                    self.log_queue.put_nowait((timestamp, frame))
+                except queue.Full:
+                    logger.warning(f"Log queue full ({params.LOG_QUEUE_MAXSIZE} frames); dropping oldest frame")
+                    try:
+                        self.log_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    self.log_queue.put_nowait((timestamp, frame))
 
                 # decode broadcast frames and update shared display state
                 f = utils.parse_frame(frame)
@@ -274,12 +310,8 @@ class Drone:
         """
         logger.info("Stopping telemetry reception...")
         self.stop_event.set()
-        # close the serial port to immediately unblock any pending serial.read()
-        # in the reader thread, rather than waiting up to SERIAL_TIMEOUT seconds
-        if not self.simulator:
-            self.connection.disconnect()
-        self.telemetry_reader_thread.join(timeout=5)
-        self.telemetry_writer_thread.join(timeout=5)
+        self.telemetry_reader_thread.join(timeout=3)
+        self.telemetry_writer_thread.join(timeout=3)
         logger.info("Telemetry reception stopped.")
 
     def connect(self):
@@ -547,84 +579,92 @@ class Drone:
     
     def render_artificial_horizon_panel(self, pitch_deg, roll_deg, width=33, height=11):
         """
-        Render an artificial horizon (attitude indicator) as a rich Panel.
+        Render an artificial horizon (attitude indicator) as a multiline Rich markup
+        string, suitable for embedding directly in a Panel or Layout.
+
+        Parameters:
+        -----------
+            pitch_deg : float  Pitch angle in degrees (+up / -down).
+            roll_deg  : float  Roll  angle in degrees (+right wing down).
+            width     : int    Total character width  including side borders.
+            height    : int    Total character height including top/bottom borders.
         """
+        # clamp roll to avoid math.tan() singularity near ±90°
+        roll_deg  = max(-89.0, min(89.0, roll_deg))
         pitch = math.radians(pitch_deg)
-        roll = math.radians(roll_deg)
+        roll  = math.radians(roll_deg)
+
         center_row = height // 2
-        center_col = width // 2
+        center_col = width  // 2
+
+        # choose block character set: Unicode on any terminal except bare linux console
+        block_chars = _HORIZON_BLOCKS_UNICODE if os.environ.get('TERM', '') != 'linux' else _HORIZON_BLOCKS_ASCII
+
+        # scale factor: ±45° pitch maps to ±half the drawable height
+        pitch_scale = (height / 2) / math.radians(45)
+
+        # precompute horizon row position for every column
+        # (horizon only depends on col, not row — no need to recompute inside the row loop)
+        horizon_for_col = [
+            center_row - (col - center_col) * math.tan(roll) + pitch * pitch_scale
+            for col in range(width)
+        ]
+
+        # precompute center crosshair columns and marker characters
+        crosshair_cols  = set(range(center_col - 2, center_col + 3))
+        crosshair_chars = "──┼──"   # indexed by col - (center_col - 2)
+
         lines = []
-        # Top border
-        top_line = "[white]" + u"\u250c" + (u"\u2500" * (width-2)) + u"\u2510[/white]"
-        lines.append(top_line)
-        # Unicode block elements for sub-row smoothing
-        USE_UNICODE_BLOCKS = os.environ.get('TERM') != 'linux'
-        if USE_UNICODE_BLOCKS:
-            block_chars = [
-                (0.0, " "),
-                (0.125, "▁"),
-                (0.25, "▂"),
-                (0.375, "▃"),
-                (0.5, "▄"),
-                (0.625, "▅"),
-                (0.75, "▆"),
-                (0.875, "▇"),
-                (1.0, "█"),
-            ]
-        else:
-            block_chars = [
-                (0.0, " "),
-                (0.125, "."),
-                (0.25, ":"),
-                (0.375, "-"),
-                (0.5, "="),
-                (0.625, "+"),
-                (0.75, "*"),
-                (0.875, "#"),
-                (1.0, "@"),
-            ]
-        for row in range(1, height-1):
+        lines.append("[white]┌" + "─" * (width - 2) + "┐[/white]")
+
+        for row in range(1, height - 1):
             line = ""
             for col in range(width):
-                x = col - center_col
-                horizon = center_row - (x * math.tan(roll)) + (pitch * (height/2)/math.radians(45))
-                # Center marker: '-+-' at the center
-                if row == center_row and col in (center_col-2, center_col-1, center_col, center_col+1, center_col+2):
-                    marker = u"\u2500\u2500\u253c\u2500\u2500"[col - (center_col-2)]
-                    line += f"[white]{marker}[/white]"
-                elif col == 0:
-                    # Left edge
-                    if abs(row - center_row) % 3 == 0:
-                        line += u"[white]\u251c[/white]"
-                    else:
-                        line += u"[white]\u2502[/white]"
-                elif col == width - 1:
-                    # Right edge
-                    if abs(row - center_row) % 3 == 0:
-                        line += u"[white]\u2524[/white]"
-                    else:
-                        line += u"[white]\u2502[/white]"
-                else:
-                    rel = horizon - row
-                    if -1.0 < rel < 0.0:
-                        # Only draw block if horizon passes through this row from above
-                        absrel = abs(rel)
-                        block = "━"
-                        for threshold, char in block_chars:
-                            if absrel <= threshold:
-                                block = char
-                                break
-                        line += f"[green]{block}[/green]"
-                    elif row < horizon:
-                        line += " "
-                    else:
-                        block = block_chars[-1][1]  # default to full block
-                        line += f"[green]{block}[/green]"
-            lines.append(line)
-        # Bottom border
-        bottom_line = "[white]" + u"\u2514" + (u"\u2500" * (width-2)) + u"\u2518[/white]"
+                horizon = horizon_for_col[col]
 
-        lines.append(bottom_line)
+                # center crosshair takes priority over sky/ground fill
+                if row == center_row and col in crosshair_cols:
+                    line += f"[white]{crosshair_chars[col - (center_col - 2)]}[/white]"
+
+                elif col == 0:
+                    line += "[white]├[/white]" if abs(row - center_row) % 3 == 0 else "[white]│[/white]"
+
+                elif col == width - 1:
+                    line += "[white]┤[/white]" if abs(row - center_row) % 3 == 0 else "[white]│[/white]"
+
+                else:
+                    # rel = horizon - row:
+                    #   rel >= 1  → horizon is below this cell entirely → sky (space)
+                    #   rel <  0  → horizon is above this cell entirely → ground (full block)
+                    #   0 <= rel < 1 → horizon passes through this cell → sub-cell blend
+                    rel = horizon - row
+                    if rel >= 1.0:
+                        line += " "
+                    elif rel < 0.0:
+                        line += f"[green]{block_chars[-1][1]}[/green]"
+                    else:
+                        # fill fraction from bottom = 1 - rel
+                        # (rel=0.0 → full ground; rel=0.99 → barely any ground)
+                        fill = 1.0 - rel
+                        char = block_chars[-1][1]
+                        for threshold, c in block_chars:
+                            if fill <= threshold:
+                                char = c
+                                break
+                        line += f"[green]{char}[/green]"
+
+            lines.append(line)
+
+        # bottom border with live roll/pitch readout embedded in the border line
+        readout = f"R{roll_deg:+.0f}° P{pitch_deg:+.0f}°"
+        pad = width - 2 - len(readout)
+        pad_l, pad_r = pad // 2, pad - pad // 2
+        lines.append(
+            f"[white]└{'─' * pad_l}[/white]"
+            f"[bold yellow]{readout}[/bold yellow]"
+            f"[white]{'─' * pad_r}┘[/white]"
+        )
+
         return '\n'.join(lines)
     
     def render_panel(self) -> Panel:
@@ -722,7 +762,7 @@ class Drone:
 
         # column 3: mag, RC, gimbal, status
         c3 = kv_table()
-        c3.add_row("Landing gear", params.LANDING_GEAR_MODE.get(drone_data.get('landing_gear_status', 0), "Unknown"))
+        c3.add_row("Landing gear", params.LANDING_GEAR_MODE.get(drone_data.get('landing_gear', 0), "Unknown"))
         c3.add_row("Errors",       params.STATUS_ERROR.get(drone_data.get('flight_error', 0), "Unknown"))
         c3.add_row("", "")
         c3.add_row("[bold blue] BATTERY[/bold blue]", "")

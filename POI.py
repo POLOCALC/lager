@@ -15,18 +15,21 @@ class POI():
         self.current_distance = None
         self.is_tracking = False
         self.tracking_thread = None
+        self._stop_tracking_event = threading.Event()
+        self.poi_ecef = pm.geodetic2ecef(self.latitude, self.longitude, self.altitude)
 
     def get_coordinates(self):
         return (self.latitude, self.longitude, self.altitude)
     
     def start_tracking(self, uav, gimbal, forward_heading=True):
         logger.info(f"Starting tracking of POI: {self.name}")
+        self._stop_tracking_event.clear()
         self.is_tracking = True
-        self.tracking_thread = threading.Thread(target=self._track_poi, args=(uav, gimbal, forward_heading))
+        self.tracking_thread = threading.Thread(target=self._track_poi, args=(uav, gimbal, forward_heading), daemon=True)
         self.tracking_thread.start()
 
     def _track_poi(self, uav, gimbal, forward_heading):
-        while True:
+        while not self._stop_tracking_event.is_set():
             uav_attitude = uav.telemetry_state.get_attitude()
             uav_lat = uav_attitude.get('latitude')
             uav_lon = uav_attitude.get('longitude')
@@ -36,11 +39,17 @@ class POI():
             uav_roll = uav_attitude.get('roll')
             uav_yaw = uav_attitude.get('yaw')
 
+            if None in [uav_lat, uav_lon, uav_alt, uav_heading, uav_pitch, uav_roll, uav_yaw]:
+                logger.warning(f"Missing UAV telemetry data. Cannot track POI {self.name}.")
+                self._stop_tracking_event.wait(timeout=1)
+                continue
+
             self.current_distance = self.distance(uav_lat, uav_lon, uav_alt)
             if self.current_distance > self.max_distance:
                 logger.warning(f"POI {self.name} is out of range (distance: {self.current_distance:.2f} m). Not tracking.")
                 self.is_tracking = False
-                time.sleep(5)  # check again in 5 seconds
+                # wait up to 5 s but wake immediately if stop() is called
+                self._stop_tracking_event.wait(timeout=5)
                 continue
             else:
                 self.is_tracking = True
@@ -49,7 +58,7 @@ class POI():
                 if forward_heading:
                     gimbal_yaw = 0.0
                 else:
-                    # hehehe
+                    # TODO
                     gimbal_yaw = 0.0
                     pass
 
@@ -65,11 +74,12 @@ class POI():
                 # set the gimbal orientation to point at the POI
                 gimbal.goto(yaw=gimbal_yaw, pitch=gimbal_pitch, roll=gimbal_roll, wait=False)
 
-                time.sleep(0.1)  # update at 10 Hz
+                self._stop_tracking_event.wait(timeout=0.1)  # update at ~10 Hz
 
     def stop_tracking(self):
         logger.info(f"Stopping tracking of POI: {self.name}")
         self.is_tracking = False
+        self._stop_tracking_event.set()  # wakes any wait() in the tracking loop immediately
         if self.tracking_thread:
             self.tracking_thread.join()
             self.tracking_thread = None
@@ -77,9 +87,8 @@ class POI():
 
     def distance(self, uav_lat, uav_lon, uav_alt):
         # calculate distance between uav and POI using pymap3d
-        poi_ecef = pm.geodetic2ecef(self.latitude, self.longitude, self.altitude)
         uav_ecef = pm.geodetic2ecef(uav_lat, uav_lon, uav_alt)
-        distance = ((poi_ecef[0] - uav_ecef[0]) ** 2 + (poi_ecef[1] - uav_ecef[1]) ** 2 + (poi_ecef[2] - uav_ecef[2]) ** 2) ** 0.5
+        distance = ((self.poi_ecef[0] - uav_ecef[0]) ** 2 + (self.poi_ecef[1] - uav_ecef[1]) ** 2 + (self.poi_ecef[2] - uav_ecef[2]) ** 2) ** 0.5
         return distance
     
     def get_data(self):

@@ -6,7 +6,6 @@ import struct
 import logging
 import os
 import pickle
-import sys
 from rich.table import Table
 from rich.panel import Panel
 
@@ -76,6 +75,7 @@ class Gimbal:
 
         # buffer for recording data to file
         self._telemetry_data_buffer = []
+        self._telemetry_lock = threading.Lock()  # guards _save_telemetry_flag and _telemetry_data_buffer
 
         # filename for telemetry log
         self.telemetry_data_filename = params.TELEMETRY_FILENAME
@@ -100,19 +100,23 @@ class Gimbal:
         in the update thread as it is received.
         """
         logger.info("Starting gimbal telemetry logging...")
-        self._save_telemetry_flag = True
+        with self._telemetry_lock:
+            self._save_telemetry_flag = True
 
     def stop_telemetry(self):
         """
         Stop logging telemetry data by setting the flag to False. Any remaining data in the log
         buffer will be written to file.
         """
-        if self._save_telemetry_flag:
+        with self._telemetry_lock:
+            if not self._save_telemetry_flag:
+                return
             logger.info("Stopping gimbal telemetry logging...")
             self._save_telemetry_flag = False
-            if self._telemetry_data_buffer:
-                logger.info(f"Writing remaining {len(self._telemetry_data_buffer)} telemetry messages to file...")
-                self._write_telemetry_data()
+            remaining = len(self._telemetry_data_buffer)
+        if remaining:
+            logger.info(f"Writing remaining {remaining} telemetry messages to file...")
+            self._write_telemetry_data()
 
     def send_heartbeat(self):
         """
@@ -150,7 +154,7 @@ class Gimbal:
             self.master = mavutil.mavlink_connection(self.port, baud=self.baudrate)
         except Exception as e:
             logger.error(f"Failed to connect to gimbal on {self.port} at {self.baudrate} baudrate: {e}")
-            sys.exit(1)
+            raise ConnectionError(f"Failed to connect to gimbal on {self.port} at {self.baudrate} baudrate: {e}")
         logger.info(f"Trying to connect to gimbal on {self.port} at {self.baudrate} baudrate")
 
         logger.info("Starting heartbeat thread: heartbeat will be sent every {} seconds".format(1.0/self.heartbeat_frequency))
@@ -365,6 +369,8 @@ class Gimbal:
                 step_interval = 0.05  # seconds between waypoints (~20 Hz)
                 n_steps = max(1, int(total_time / step_interval))
                 for i in range(1, n_steps + 1):
+                    if self.stop_event.is_set():
+                        break
                     elapsed = i * step_interval
 
                     # each axis advances at its own speed and clamps once it reaches the target
@@ -437,22 +443,30 @@ class Gimbal:
             message_dict : dict
                 A dictionary containing telemetry data to be logged.
         """
-        self._telemetry_data_buffer.append(message_dict)
-        if len(self._telemetry_data_buffer) >= params.TELEMETRY_DATA_BUFFER:
+        with self._telemetry_lock:
+            if not self._save_telemetry_flag:
+                return
+            self._telemetry_data_buffer.append(message_dict)
+            flush = len(self._telemetry_data_buffer) >= params.TELEMETRY_DATA_BUFFER
+        if flush:
             self._write_telemetry_data()
 
     def _write_telemetry_data(self):
         """
         Write the contents of the telemetry data buffer to a binary file using the pickle module.
+        The buffer is snapshotted and cleared while holding the lock so that the update thread
+        can keep appending while the disk write proceeds.
         """
-        if len(self._telemetry_data_buffer) == 0:
-            logger.debug(f"Empty telemetry data buffer, nothing to write to {self.telemetry_data_filename}")
-            return
-        
+        with self._telemetry_lock:
+            if not self._telemetry_data_buffer:
+                logger.debug(f"Empty telemetry data buffer, nothing to write to {self.telemetry_data_filename}")
+                return
+            snapshot = list(self._telemetry_data_buffer)
+            self._telemetry_data_buffer.clear()
+
         try:
             with open(self.telemetry_data_filename, 'ab') as f:
-                pickle.dump(self._telemetry_data_buffer, f)
-                self._telemetry_data_buffer.clear()
+                pickle.dump(snapshot, f)
                 logger.debug(f"Telemetry data written to {self.telemetry_data_filename}")
         except Exception as e:
             logger.error(f"Failed to write telemetry data: {e}")
@@ -1870,7 +1884,7 @@ class Gimbal:
         c1.add_row("Temp", f"{gimbal_data.get('temperature', 0):+3.3f}")
         c1.add_row("[bold blue] SYSTEM", "")
         c1.add_row("Load (%)", f"{gimbal_data.get('load', 0):+3.3f}")
-        c1.add_row("Battery (V)", f"{gimbal_data.get('voltage_battery', 0):.1f}")
+        c1.add_row("Voltage (V)", f"{gimbal_data.get('voltage_battery', 0):.1f}")
         c1.add_row("Current (A)", f"{gimbal_data.get('current_battery', 0):.1f}")
         c1.add_row("Battery (%)", f"{gimbal_data.get('battery_remaining', 0):.1f}")
 

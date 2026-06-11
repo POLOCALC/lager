@@ -7,6 +7,8 @@ import threading
 
 from Drones import DJI_M600
 from Gimbals import Gremsy_T7
+import Drones.DJI_M600.parameters as drone_params
+import Gimbals.Gremsy_T7.parameters as gimbal_params
 import cli
 import POI
 import parameters as params
@@ -76,6 +78,8 @@ class Controller:
             name = self.config['Controller']['name']
             logging.info(f"Controller name: {name}")
         
+        display_enabled = False  # safe default if the key is absent from the config
+        refresh_rate    = 1
         if 'display' in self.config['Controller']:
             if 'enable' in self.config['Controller']['display']:
                 display_enabled = self.config['Controller']['display']['enable']
@@ -132,6 +136,8 @@ class Controller:
         
         if 'simulator' in self.config['Drone']:
             simulator = self.config['Drone']['simulator']
+        else:
+            simulator = False
 
         if 'connection' in self.config['Drone']:
             connection_type = self.config['Drone']['connection'].get('type', 'unknown')
@@ -150,8 +156,10 @@ class Controller:
             return None
         
         if 'telemetry' in self.config['Drone']:
-            telemetry_frequency = self.config['Drone']['telemetry'].get('frequency', None)
+            telemetry_frequency = self.config['Drone']['telemetry'].get('frequency', drone_params.TELEMETRY_FREQ)
             logging.info(f"Drone telemetry frequency: {telemetry_frequency} Hz")
+        else:
+            telemetry_frequency = drone_params.TELEMETRY_FREQ
 
         
         # check if the drone type is supported
@@ -183,7 +191,9 @@ class Controller:
         
         if 'simulator' in self.config['Gimbal']:
             simulator = self.config['Gimbal']['simulator']
-        
+        else:
+            simulator = False
+
         if 'connection' in self.config['Gimbal']:
             connection_type = self.config['Gimbal']['connection'].get('type', 'unknown')
             connection_protocol = self.config['Gimbal']['connection'].get('protocol', 'unknown')
@@ -202,10 +212,12 @@ class Controller:
         
         if 'telemetry' in self.config['Gimbal']:
             telemetry_frequency = self.config['Gimbal']['telemetry'].get('frequency', None)
-            heartbeat_frequency = self.config['Gimbal']['telemetry'].get('heartbeat_frequency', None)
-            
+            heartbeat_frequency = self.config['Gimbal']['telemetry'].get('heartbeat_frequency', gimbal_params.HEARTBEAT_FREQUENCY)
             logging.info(f"Gimbal telemetry frequency: {telemetry_frequency} Hz")
             logging.info(f"Gimbal heartbeat frequency: {heartbeat_frequency} Hz")
+        else:
+            telemetry_frequency = None
+            heartbeat_frequency = gimbal_params.HEARTBEAT_FREQUENCY
 
         
         # check if the gimbal type is supported

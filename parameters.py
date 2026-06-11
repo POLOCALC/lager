@@ -1,4 +1,4 @@
-DATA_PATH = '/home/polocalc/lager/data'
+DATA_PATH = '/home/polocalc/data'
 DATA_FOLDER_PREFIX = 'telemetry'
 CURRENT_DATA_FOLDER = 'current'
 
@@ -16,4 +16,4 @@ LED_STATE_ON = 1
 LED_STATE_BLINK = 2
 
 # CLI settings
-LOG_LINES_TO_SHOW = 24
+LOG_LINES_TO_SHOW = 20
