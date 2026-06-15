@@ -52,8 +52,6 @@ lager/
 │   ├── move_gimbal_config.yaml         # Config for gimbal movement tests
 │   ├── show_telemetry_config.yaml      # Config for live telemetry display
 │   └── show_telemetry_sim_config.yaml  # Config for simulated telemetry display
-├── data/
-│   └── current             # Symlink to the most recent telemetry run folder
 ├── Drones/
 │   └── DJI_M600/           # DJI M600 driver (connection, telemetry, utils)
 ├── Gimbals/
@@ -206,7 +204,7 @@ python3 move_gimbal.py
 
 Press **Ctrl+C** to stop any running script gracefully; telemetry logging will be stopped and devices disconnected cleanly.
 
-Each run creates a timestamped folder under `data/` containing the log file and a copy of the configuration used. A `data/current` symlink is automatically updated to point to the latest run folder.
+Each run creates a timestamped folder under `parameters.DATA_PATH` containing the log file and a copy of the configuration used. A `current` symlink is automatically updated to point to the latest run folder.
 
 ---
 
@@ -264,7 +262,7 @@ Pitch computation:
 ```python
 az, el, rng = pymap3d.geodetic2aer(poi_lat, poi_lon, poi_alt,
                                     uav_lat, uav_lon, uav_alt, deg=True)
-gimbal_pitch = -el   # negative because elevation down = positive pitch-down command
+gimbal_pitch = el
 ```
 
 ### `Drones/DJI_M600`
@@ -287,7 +285,7 @@ Builds and refreshes a `rich` `Live` layout with three panes:
 - **Footer** — last N lines of the log file, colour-coded by log level.
 
 ### `GPIO`
-Controls a status LED on a Raspberry Pi GPIO pin (BCM pin 17 by default). The LED reflects the controller lifecycle:
+Controls a status LED on a Raspberry Pi GPIO pin (BCM pin 17 by default). <font color="red">Don't forget a 220 Ohm resistor to avoid frying the diode and GPIO.</font> The LED reflects the controller lifecycle:
 
 | LED state | Meaning |
 |-----------|----------|
