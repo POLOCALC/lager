@@ -1,10 +1,10 @@
-Controller:
+pointing_controller:
   name: Lab Test Controller
   display:
-    enable: True
+    enable: False
     refresh_rate: 2 # Hz
 
-Drone:
+uav:
   name: DJI M600
   simulator: False
   connection:
@@ -16,7 +16,7 @@ Drone:
   telemetry:
     frequency: 50  # Hz
 
-Gimbal:
+gimbal:
   name: Gremsy T7
   simulator: False
   connection:

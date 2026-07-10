@@ -2,7 +2,7 @@ import sys
 import time
 sys.path.append('..')
 
-from Controller import Controller
+from lager.PointingController import PointingController
 
 gimbal_roll_limits  = (-30, 30) # degrees
 gimbal_pitch_limits = (-30, 30) # degrees
@@ -24,7 +24,7 @@ def map_RC_to_angle(x, x_min, x_max, y_min, y_max):
 
 def main():
     config_file = '../config/move_gimbal_config.yaml'
-    controller = Controller(config_file)
+    controller = PointingController(config_file)
     
     # connect to drone and gimbal
     controller.connect()

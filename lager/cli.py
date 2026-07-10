@@ -1,5 +1,5 @@
 import time
-import parameters as params
+import lager.parameters as params
 
 from rich.live import Live
 from rich.layout import Layout

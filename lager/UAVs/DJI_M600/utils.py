@@ -2,8 +2,8 @@ import math
 import logging
 import struct
 
-import Drones.DJI_M600.utils as utils
-import Drones.DJI_M600.parameters as params
+import lager.UAVs.DJI_M600.utils as utils
+import lager.UAVs.DJI_M600.parameters as params
 
 log = logging.getLogger(__name__)
 

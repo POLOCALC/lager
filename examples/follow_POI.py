@@ -1,4 +1,4 @@
-from Controller import Controller
+from lager.PointingController import PointingController
 import logging
 import time
 import argparse
@@ -10,9 +10,9 @@ config_file = parser.parse_args().config
 def main():
     controller = None
     try:
-        controller = Controller(config_file)
+        controller = PointingController(config_file)
 
-        # connect to the drone and gimbal (if configured)
+        # connect to the UAV and gimbal (if configured)
         controller.connect()
 
         # start telemetry logging (if configured)
@@ -23,7 +23,7 @@ def main():
 
         # start following the POI
         if controller.poi is not None:
-            controller.poi.start_tracking(controller.drone, controller.gimbal, forward_heading=True)
+            controller.poi.start_tracking(controller.uav, controller.gimbal, forward_heading=True)
 
         # stop telemetry logging if ctrl+c is pressed
         try:

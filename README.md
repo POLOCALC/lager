@@ -4,6 +4,9 @@ Live Attitude and Gimbal Error Resolver: a Python-based controller for UAV paylo
 
 ---
 
+## To install
+pip install -e .
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -305,7 +308,7 @@ The `LED` class wraps `RPi.GPIO` and handles the blink loop in a daemon thread. 
 | `decode_telemetry.py` | root | Load and print a saved telemetry binary file |
 | `show_telemetry.py` | `tests/` | Live display with real hardware |
 | `show_telemetry_sim.py` | `tests/` | Live display with simulated data |
-| `move_gimbal.py` | `tests/` | Command the gimbal to a sequence of angles |
+| `move_gimbal_RC.py` | `tests/` | Command the gimbal to a sequence of angles following the remote RC sticks |
 
 ---
 

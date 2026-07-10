@@ -1,6 +1,6 @@
-from DataLoader import DataLoader
+from lager.DataLoader import DataLoader
 import argparse
-import parameters as params
+import lager.parameters as params
 import os
 
 parser = argparse.ArgumentParser(description='Decode telemetry data')

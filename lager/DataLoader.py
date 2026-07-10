@@ -3,8 +3,8 @@ import yaml
 import pickle
 
 from Drones import DJI_M600
-from Gimbals import Gremsy_T7
-import parameters as params
+from lager.Gimbals import Gremsy_T7
+import lager.parameters as params
 
 class DataLoader:
 

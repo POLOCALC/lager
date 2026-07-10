@@ -11,10 +11,10 @@ from rich.panel import Panel
 from rich.layout import Layout
 from rich.console import Group
 
-import Drones.DJI_M600.parameters as params
-import Drones.DJI_M600.connection as connection
-import Drones.DJI_M600.utils as utils
-import Drones.DJI_M600.telemetry_state as telemetry_state
+import lager.UAVs.DJI_M600.parameters as params
+import lager.UAVs.DJI_M600.connection as connection
+import lager.UAVs.DJI_M600.utils as utils
+import lager.UAVs.DJI_M600.telemetry_state as telemetry_state
 
 
 # use the Controller.py logging configuration

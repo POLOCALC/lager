@@ -2,8 +2,8 @@ import struct
 import os
 from pandas import DataFrame
 
-import Drones.DJI_M600.parameters as params
-import Drones.DJI_M600.utils as utils
+import lager.UAVs.DJI_M600.parameters as params
+import lager.UAVs.DJI_M600.utils as utils
 
 class DataLoader:
     def __init__(self, data_folder):

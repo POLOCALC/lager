@@ -9,10 +9,10 @@ import pickle
 from rich.table import Table
 from rich.panel import Panel
 
-import Gimbals.Gremsy_T7.parameters as params
-import Gimbals.Gremsy_T7.keywords as kw
-import Gimbals.Gremsy_T7.utils as utils
-import Gimbals.Gremsy_T7.telemetry_state as telemetry_state
+import lager.Gimbals.Gremsy_T7.parameters as params
+import lager.Gimbals.Gremsy_T7.keywords as kw
+import lager.Gimbals.Gremsy_T7.utils as utils
+import lager.Gimbals.Gremsy_T7.telemetry_state as telemetry_state
 
 
 # use the Controller.py logging configuration

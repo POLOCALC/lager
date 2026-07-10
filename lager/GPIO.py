@@ -1,5 +1,5 @@
 import threading
-import parameters as params
+import lager.parameters as params
 import RPi.GPIO as _GPIO
 
 

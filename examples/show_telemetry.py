@@ -2,11 +2,11 @@ import sys
 import time
 sys.path.append('..')
 
-from Controller import Controller
+from lager.PointingController import PointingController
 
 def main():
-    config_file = '../config/show_telemetry_sim_config.yaml'
-    controller = Controller(config_file)
+    config_file = '../config/show_telemetry_config.yaml'
+    controller = PointingController(config_file)
     
     # connect to the drone and gimbal (if configured)
     controller.connect()

@@ -1,0 +1,25 @@
+pointing_controller:
+  name: Lab Test Controller
+  display:
+    enable: False
+    refresh_rate: 2 # Hz
+
+gimbal:
+  name: Gremsy T7
+  simulator: False
+  connection:
+    type: serial
+    protocol: mavlink
+    port: /dev/ttyAMA3
+    baudrate: 115200
+    timeout: 3
+  telemetry:
+    heartbeat_frequency: 1  # Hz
+    frequency: 50  # Hz
+
+poi:
+  name: POI
+  latitude: 45.513511
+  longitude: 9.211680
+  altitude: 124
+  max_distance: 700.0  # meters

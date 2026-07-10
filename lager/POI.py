@@ -1,6 +1,5 @@
 import logging
 import threading
-import time
 import pymap3d as pm
 
 logger = logging.getLogger(__name__)

@@ -2,7 +2,7 @@ import pickle
 import os
 from pandas import DataFrame
 
-import Gimbals.Gremsy_T7.parameters as params
+import lager.Gimbals.Gremsy_T7.parameters as params
 
 class DataLoader:
     def __init__(self, data_folder):
