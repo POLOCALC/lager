@@ -63,45 +63,37 @@ class PointingController:
             os.symlink(self.data_folder, current_link)
             self.logger.info(f"'current' symlink updated to point to: {self.data_folder}")
 
-        # load configuration from the specified YAML file
+        # load configuration from the specified YAML file or dictionary
         try:
-            with open(config_file, 'r') as file:
-                self.config = yaml.safe_load(file)
+            if isinstance(config_file, dict):
+                self.config = config_file
+                self.logger.info("Configuration loaded from provided dictionary")
+            else:
+                with open(config_file, 'r') as file:
+                    self.config = yaml.safe_load(file)
+                self.logger.info(f"Configuration loaded successfully from {config_file}")
             
-            # copy the configuration file to the data folder for reference
-            config_copy_path = os.path.join(self.data_folder, os.path.basename(config_file))
-            with open(config_copy_path, 'w') as file:
-                yaml.dump(self.config, file)
-            self.logger.info(f"Configuration loaded successfully from {config_file}")
-            self.logger.info(f"Configuration copied to {config_copy_path}")
+                # copy the configuration file to the data folder for reference
+                config_copy_path = os.path.join(self.data_folder, os.path.basename(config_file))
+                with open(config_copy_path, 'w') as file:
+                    yaml.dump(self.config, file)
+                self.logger.info(f"Configuration copied to {config_copy_path}")
 
         except Exception as e:
             self.logger.error(f"Failed to load configuration: {e}")
             sys.exit(1)
 
         # check if the configuration is valid
-        if 'pointing_controller' not in self.config:
-            self.logger.warning("Configuration file is missing 'pointing_controller' section. Display will be disabled.")
+        if 'name' not in self.config:
+            self.logger.info("Configuration file is missing 'name' field.")
             name = "Default Pointing Controller"
+        if 'display' not in self.config:
+            self.logger.info("Configuration file is missing 'display' field. Disabling display by default.")
             display_enabled = False
-            refresh_rate    = 1
+            refresh_rate = 1
         else:
-            if 'name' in self.config['pointing_controller']:
-                name = self.config['pointing_controller']['name']
-                self.logger.info(f"Pointing controller name: {name}")
-            
-            display_enabled = False
-            refresh_rate    = 1
-            if 'display' in self.config['pointing_controller']:
-                if 'enable' in self.config['pointing_controller']['display']:
-                    display_enabled = self.config['pointing_controller']['display']['enable']
-                    if display_enabled:
-                        self.logger.info("Display enabled in configuration.")
-                        if 'refresh_rate' in self.config['pointing_controller']['display']:
-                            refresh_rate = self.config['pointing_controller']['display']['refresh_rate']
-                            self.logger.info(f"Display refresh rate: {refresh_rate} Hz")
-                    else:
-                        self.logger.info("Display disabled in configuration.")
+            display_enabled = self.config['display'].get('enable', False)
+            refresh_rate = self.config['display'].get('refresh_rate', 1)
 
         # get uav type and configuration
         self.uav = self.get_uav()

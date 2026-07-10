@@ -1,8 +1,7 @@
-pointing_controller:
-  name: Lab Test Controller
-  display:
-    enable: False
-    refresh_rate: 2 # Hz
+name: Lab Test Controller
+display:
+  enable: False
+  refresh_rate: 2 # Hz
 
 uav:
   name: DJI M600
