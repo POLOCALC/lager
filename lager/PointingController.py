@@ -44,22 +44,24 @@ class PointingController:
         if not os.path.exists(self.data_folder):
             os.makedirs(self.data_folder)
 
-        # configure logging
-        logging_file = os.path.join(self.data_folder, params.LOGGING_FILE_NAME)
-        logging.basicConfig(level=LOGGING_LEVEL, format=params.LOGGING_FORMAT, datefmt=params.LOGGING_DATEFMT, handlers=[
-            logging.FileHandler(logging_file)
-        ])
-        logging.info(f"Controller initialized at {timestamp}")
+        # configure logging only if data_folder is not externally specified (to avoid overwriting existing logs)
+        if data_folder is None:
+            logging_file = os.path.join(self.data_folder, params.LOGGING_FILE_NAME)
+            logging.basicConfig(level=LOGGING_LEVEL, format=params.LOGGING_FORMAT, datefmt=params.LOGGING_DATEFMT, handlers=[
+                logging.FileHandler(logging_file)
+            ])
+        self.logger = logging.getLogger(__name__)
 
+        self.logger.info(f"Controller initialized at {timestamp}")
         # create/update "current" symlink pointing to the new data folder
         # symlink is externally created if data_folder is specified
         if data_folder is None:
             current_link = os.path.join(params.DATA_PATH, params.CURRENT_DATA_FOLDER)
             if os.path.islink(current_link) or os.path.exists(current_link):
                 os.remove(current_link)
-                logging.info(f"Previous 'current' symlink removed")
+                self.logger.info(f"Previous 'current' symlink removed")
             os.symlink(self.data_folder, current_link)
-            logging.info(f"'current' symlink updated to point to: {self.data_folder}")
+            self.logger.info(f"'current' symlink updated to point to: {self.data_folder}")
 
         # load configuration from the specified YAML file
         try:
@@ -70,23 +72,23 @@ class PointingController:
             config_copy_path = os.path.join(self.data_folder, os.path.basename(config_file))
             with open(config_copy_path, 'w') as file:
                 yaml.dump(self.config, file)
-            logging.info(f"Configuration loaded successfully from {config_file}")
-            logging.info(f"Configuration copied to {config_copy_path}")
+            self.logger.info(f"Configuration loaded successfully from {config_file}")
+            self.logger.info(f"Configuration copied to {config_copy_path}")
 
         except Exception as e:
-            logging.error(f"Failed to load configuration: {e}")
+            self.logger.error(f"Failed to load configuration: {e}")
             sys.exit(1)
 
         # check if the configuration is valid
         if 'pointing_controller' not in self.config:
-            logging.warning("Configuration file is missing 'pointing_controller' section. Display will be disabled.")
+            self.logger.warning("Configuration file is missing 'pointing_controller' section. Display will be disabled.")
             name = "Default Pointing Controller"
             display_enabled = False
             refresh_rate    = 1
         else:
             if 'name' in self.config['pointing_controller']:
                 name = self.config['pointing_controller']['name']
-                logging.info(f"Pointing controller name: {name}")
+                self.logger.info(f"Pointing controller name: {name}")
             
             display_enabled = False
             refresh_rate    = 1
@@ -94,12 +96,12 @@ class PointingController:
                 if 'enable' in self.config['pointing_controller']['display']:
                     display_enabled = self.config['pointing_controller']['display']['enable']
                     if display_enabled:
-                        logging.info("Display enabled in configuration.")
+                        self.logger.info("Display enabled in configuration.")
                         if 'refresh_rate' in self.config['pointing_controller']['display']:
                             refresh_rate = self.config['pointing_controller']['display']['refresh_rate']
-                            logging.info(f"Display refresh rate: {refresh_rate} Hz")
+                            self.logger.info(f"Display refresh rate: {refresh_rate} Hz")
                     else:
-                        logging.info("Display disabled in configuration.")
+                        self.logger.info("Display disabled in configuration.")
 
         # get uav type and configuration
         self.uav = self.get_uav()
@@ -134,14 +136,14 @@ class PointingController:
     def get_uav(self) -> object:
         # check uav configuration
         if 'uav' not in self.config:
-            logging.warning("Configuration file is missing 'uav' section.")
+            self.logger.warning("Configuration file is missing 'uav' section.")
             return None
         
         if 'name' in self.config['uav']:
             name = self.config['uav']['name']
-            logging.info(f"UAV type specified in configuration: {name}")
+            self.logger.info(f"UAV type specified in configuration: {name}")
         else:
-            logging.warning("UAV configuration is missing 'name' field.")
+            self.logger.warning("UAV configuration is missing 'name' field.")
             return None
         
         if 'simulator' in self.config['uav']:
@@ -156,18 +158,18 @@ class PointingController:
             connection_baudrate = self.config['uav']['connection'].get('baudrate', 'unknown')
             connection_timeout = self.config['uav']['connection'].get('timeout', 'unknown')
 
-            logging.info(f"UAV connection type: {connection_type}")
-            logging.info(f"UAV connection protocol: {connection_protocol}")
-            logging.info(f"UAV connection port: {connection_port}")
-            logging.info(f"UAV connection baudrate: {connection_baudrate}")
-            logging.info(f"UAV connection timeout: {connection_timeout}")
+            self.logger.info(f"UAV connection type: {connection_type}")
+            self.logger.info(f"UAV connection protocol: {connection_protocol}")
+            self.logger.info(f"UAV connection port: {connection_port}")
+            self.logger.info(f"UAV connection baudrate: {connection_baudrate}")
+            self.logger.info(f"UAV connection timeout: {connection_timeout}")
         else:
-            logging.warning("UAV configuration is missing 'connection' section, which is required for UAV connection.")
+            self.logger.warning("UAV configuration is missing 'connection' section, which is required for UAV connection.")
             return None
         
         if 'telemetry' in self.config['uav']:
             telemetry_frequency = self.config['uav']['telemetry'].get('frequency', drone_params.TELEMETRY_FREQ)
-            logging.info(f"UAV telemetry frequency: {telemetry_frequency} Hz")
+            self.logger.info(f"UAV telemetry frequency: {telemetry_frequency} Hz")
         else:
             telemetry_frequency = drone_params.TELEMETRY_FREQ
 
@@ -187,20 +189,20 @@ class PointingController:
                                    keys=None)
             return uav
         else:
-            logging.warning("Unknown UAV type found in configuration.")
+            self.logger.warning("Unknown UAV type found in configuration.")
             return None
         
     def get_gimbal(self) -> object:
         # check gimbal configuration
         if 'gimbal' not in self.config:
-            logging.error("Configuration file is missing 'gimbal' section. A gimbal is required.")
+            self.logger.error("Configuration file is missing 'gimbal' section. A gimbal is required.")
             sys.exit(1)
         
         if 'name' in self.config['gimbal']:
             name = self.config['gimbal']['name']
-            logging.info(f"Gimbal type specified in configuration: {name}")
+            self.logger.info(f"Gimbal type specified in configuration: {name}")
         else:
-            logging.error("Gimbal configuration is missing 'name' field. A gimbal name is required.")
+            self.logger.error("Gimbal configuration is missing 'name' field. A gimbal name is required.")
             sys.exit(1)
         
         if 'simulator' in self.config['gimbal']:
@@ -215,20 +217,20 @@ class PointingController:
             connection_baudrate = self.config['gimbal']['connection'].get('baudrate', 'unknown')
             connection_timeout = self.config['gimbal']['connection'].get('timeout', 'unknown')
 
-            logging.info(f"Gimbal connection type: {connection_type}")
-            logging.info(f"Gimbal connection protocol: {connection_protocol}")
-            logging.info(f"Gimbal connection port: {connection_port}")
-            logging.info(f"Gimbal connection baudrate: {connection_baudrate}")
-            logging.info(f"Gimbal connection timeout: {connection_timeout}")
+            self.logger.info(f"Gimbal connection type: {connection_type}")
+            self.logger.info(f"Gimbal connection protocol: {connection_protocol}")
+            self.logger.info(f"Gimbal connection port: {connection_port}")
+            self.logger.info(f"Gimbal connection baudrate: {connection_baudrate}")
+            self.logger.info(f"Gimbal connection timeout: {connection_timeout}")
         else:
-            logging.error("Gimbal configuration is missing 'connection' section. A gimbal connection is required.")
+            self.logger.error("Gimbal configuration is missing 'connection' section. A gimbal connection is required.")
             sys.exit(1)
         
         if 'telemetry' in self.config['gimbal']:
             telemetry_frequency = self.config['gimbal']['telemetry'].get('frequency', None)
             heartbeat_frequency = self.config['gimbal']['telemetry'].get('heartbeat_frequency', gimbal_params.HEARTBEAT_FREQUENCY)
-            logging.info(f"Gimbal telemetry frequency: {telemetry_frequency} Hz")
-            logging.info(f"Gimbal heartbeat frequency: {heartbeat_frequency} Hz")
+            self.logger.info(f"Gimbal telemetry frequency: {telemetry_frequency} Hz")
+            self.logger.info(f"Gimbal heartbeat frequency: {heartbeat_frequency} Hz")
         else:
             telemetry_frequency = None
             heartbeat_frequency = gimbal_params.HEARTBEAT_FREQUENCY
@@ -245,7 +247,7 @@ class PointingController:
             return gimbal
         
         else:
-            logging.error("Unknown gimbal type found in configuration. A supported gimbal is required.")
+            self.logger.error("Unknown gimbal type found in configuration. A supported gimbal is required.")
             sys.exit(1)
 
     def get_config(self):
@@ -254,16 +256,16 @@ class PointingController:
 
     def connect(self):
         if self.uav is not None:
-            logging.info("Connecting to UAV...")
+            self.logger.info("Connecting to UAV...")
             self.uav.connect()
         else:
-            logging.warning("No UAV configured, skipping connect.")
+            self.logger.warning("No UAV configured, skipping connect.")
         
         if self.gimbal is not None:
-            logging.info("Connecting to gimbal...")
+            self.logger.info("Connecting to gimbal...")
             self.gimbal.connect()
         else:
-            logging.warning("No gimbal configured, skipping connect.")
+            self.logger.warning("No gimbal configured, skipping connect.")
 
         if self.led is not None:
             self.led.set(params.LED_STATE_ON)   # solid on = connected, ready
@@ -271,36 +273,36 @@ class PointingController:
     
     def disconnect(self):
         if self.uav is not None:
-            logging.info("Disconnecting from UAV...")
+            self.logger.info("Disconnecting from UAV...")
             self.uav.disconnect()
         else:
-            logging.warning("No UAV configured, skipping disconnect.")
+            self.logger.warning("No UAV configured, skipping disconnect.")
         
         if self.gimbal is not None:
-            logging.info("Disconnecting from gimbal...")
+            self.logger.info("Disconnecting from gimbal...")
             self.gimbal.disconnect()
         else:
-            logging.warning("No gimbal configured, skipping disconnect.")
+            self.logger.warning("No gimbal configured, skipping disconnect.")
 
         if self.led is not None:
             self.led.set(params.LED_STATE_OFF)  # off = disconnected
             self.led.cleanup()
 
-        logging.info("Disconnected.")
+        self.logger.info("Disconnected.")
 
 
     def start_telemetry(self):
         if self.uav is not None:
-            logging.info("Starting UAV telemetry logging...")
+            self.logger.info("Starting UAV telemetry logging...")
             self.uav.start_telemetry()
         else:
-            logging.warning("No UAV configured, skipping start telemetry.")
+            self.logger.warning("No UAV configured, skipping start telemetry.")
 
         if self.gimbal is not None:
-            logging.info("Starting gimbal telemetry logging...")
+            self.logger.info("Starting gimbal telemetry logging...")
             self.gimbal.start_telemetry()
         else:
-            logging.warning("No gimbal configured, skipping start telemetry.")
+            self.logger.warning("No gimbal configured, skipping start telemetry.")
 
         if self.led is not None:
             self.led.set(params.LED_STATE_BLINK)  # blinking = telemetry acquiring
@@ -308,33 +310,33 @@ class PointingController:
     
     def stop_telemetry(self):
         if self.uav is not None:
-            logging.info("Stopping UAV telemetry logging...")
+            self.logger.info("Stopping UAV telemetry logging...")
             self.uav.stop_telemetry()
         else:
-            logging.warning("No UAV configured, skipping stop telemetry.")
+            self.logger.warning("No UAV configured, skipping stop telemetry.")
 
         if self.gimbal is not None:
-            logging.info("Stopping gimbal telemetry logging...")
+            self.logger.info("Stopping gimbal telemetry logging...")
             self.gimbal.stop_telemetry()
         else:
-            logging.warning("No gimbal configured, skipping stop telemetry.")
+            self.logger.warning("No gimbal configured, skipping stop telemetry.")
 
         if self.led is not None:
             self.led.set(params.LED_STATE_ON)   # solid on = connected, telemetry stopped
 
-        logging.info("Telemetry logging stopped. Data saved to: " + self.data_folder)
+        self.logger.info("Telemetry logging stopped. Data saved to: " + self.data_folder)
 
 
     def get_POI(self):
         # check if POI is configured
         if 'poi' not in self.config:
-            logging.warning("No 'poi' section found in configuration. POI tracking will be disabled.")
+            self.logger.warning("No 'poi' section found in configuration. POI tracking will be disabled.")
             self.poi = None
             return None
         
         if 'name' in self.config['poi']:
             name = self.config['poi']['name']
-            logging.info(f"POI type specified in configuration: {name}")
+            self.logger.info(f"POI type specified in configuration: {name}")
         else:
             name = "unknown"
 
@@ -342,16 +344,16 @@ class PointingController:
             latitude = self.config['poi']['latitude']
             longitude = self.config['poi']['longitude']
             altitude = self.config['poi']['altitude']
-            logging.info(f"POI coordinates: lat={latitude}, lon={longitude}, alt={altitude}")
+            self.logger.info(f"POI coordinates: lat={latitude}, lon={longitude}, alt={altitude}")
         else:
-            logging.warning("POI configuration is missing 'latitude', 'longitude', or 'altitude' fields.")
+            self.logger.warning("POI configuration is missing 'latitude', 'longitude', or 'altitude' fields.")
             self.poi = None
             return None
         if 'max_distance' in self.config['poi']:
             max_distance = self.config['poi']['max_distance']
-            logging.info(f"POI max distance: {max_distance} meters")
+            self.logger.info(f"POI max distance: {max_distance} meters")
         else:
-            logging.warning("POI configuration is missing 'max_distance' field.")
+            self.logger.warning("POI configuration is missing 'max_distance' field.")
             max_distance = None
         
         poi = POI.POI(name, latitude, longitude, altitude, max_distance)

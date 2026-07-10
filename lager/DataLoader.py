@@ -2,7 +2,7 @@ import os
 import yaml
 import pickle
 
-from Drones import DJI_M600
+from lager.UAVs import DJI_M600, Helikite
 from lager.Gimbals import Gremsy_T7
 import lager.parameters as params
 
@@ -28,24 +28,26 @@ class DataLoader:
         print(f"Configuration loaded from {config_file}:")
 
         # check if the configuration contains drone key
-        if 'Drone' in self.config:
-            if 'name' in self.config['Drone']:
-                print(f"  Drone: {self.config['Drone']['name']}")
+        if 'uav' in self.config:
+            if 'name' in self.config['uav']:
+                print(f"  UAV: {self.config['uav']['name']}")
 
-                if self.config['Drone']['name'] == 'DJI M600':
+                if self.config['uav']['name'] == 'DJI M600':
                     self.drone_data_loader = DJI_M600.DataLoader(data_folder)
+                elif self.config['uav']['name'] == 'Helikite':
+                    self.drone_data_loader = Helikite.DataLoader(data_folder)
             else:
-                print("  Warning: 'name' key not found in 'drone' configuration")
+                print("  Warning: 'name' key not found in 'uav' configuration")
         else:
-            print("  No 'drone' key not found in configuration")
+            print("  No 'uav' key not found in configuration")
 
 
         # check if the configuration contains gimbal key
-        if 'Gimbal' in self.config:
-            if 'name' in self.config['Gimbal']:
-                print(f"  Gimbal: {self.config['Gimbal']['name']}")
+        if 'gimbal' in self.config:
+            if 'name' in self.config['gimbal']:
+                print(f"  Gimbal: {self.config['gimbal']['name']}")
 
-                if self.config['Gimbal']['name'] == 'Gremsy T7':
+                if self.config['gimbal']['name'] == 'Gremsy T7':
                     self.gimbal_data_loader = Gremsy_T7.DataLoader(data_folder)
             else:
                 print("  Warning: 'name' key not found in 'gimbal' configuration")
