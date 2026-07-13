@@ -20,14 +20,19 @@ class POI():
     def get_coordinates(self):
         return (self.latitude, self.longitude, self.altitude)
     
-    def start_tracking(self, uav, gimbal, forward_heading=True):
+    def start_tracking(self, gimbal, uav=None, gnss_source=None, forward_heading=True):
         logger.info(f"Starting tracking of POI: {self.name}")
         self._stop_tracking_event.clear()
         self.is_tracking = True
-        self.tracking_thread = threading.Thread(target=self._track_poi, args=(uav, gimbal, forward_heading), daemon=True)
+        if uav is not None:
+            logger.info(f"Tracking POI {self.name} using UAV telemetry")
+            self.tracking_thread = threading.Thread(target=self._track_poi_using_uav, args=(uav, gimbal, forward_heading), daemon=True)
+        elif gnss_source is not None:
+            logger.info(f"Tracking POI {self.name} using GNSS source telemetry")
+            self.tracking_thread = threading.Thread(target=self._track_poi_using_gnss_source, args=(gnss_source, gimbal), daemon=True)
         self.tracking_thread.start()
 
-    def _track_poi(self, uav, gimbal, forward_heading):
+    def _track_poi_using_uav(self, uav, gimbal, forward_heading):
         while not self._stop_tracking_event.is_set():
             uav_attitude = uav.telemetry_state.get_attitude()
             uav_lat = uav_attitude.get('latitude')
@@ -67,6 +72,49 @@ class POI():
                 # compute pitch correction based on uav and POI world coordinates
                 az, el, rng = pm.geodetic2aer(self.latitude, self.longitude, self.altitude,
                                               uav_lat, uav_lon, uav_alt,
+                                              deg=True)
+                gimbal_pitch = el
+
+                # set the gimbal orientation to point at the POI
+                gimbal.goto(yaw=gimbal_yaw, pitch=gimbal_pitch, roll=gimbal_roll, wait=False)
+
+                self._stop_tracking_event.wait(timeout=0.1)  # update at ~10 Hz
+
+    def _track_poi_using_gnss_source(self, gnss_source, gimbal, forward_heading):
+        while not self._stop_tracking_event.is_set():
+            lat = gnss_source.get('latitude')
+            lon = gnss_source.get('longitude')
+            alt = gnss_source.get('altitude')
+
+            if None in [lat, lon, alt]:
+                logger.warning(f"Missing positioning data. Cannot track POI {self.name}.")
+                self._stop_tracking_event.wait(timeout=1)
+                continue
+
+            self.current_distance = self.distance(lat, lon, alt)
+            if self.current_distance > self.max_distance:
+                logger.warning(f"POI {self.name} is out of range (distance: {self.current_distance:.2f} m). Not tracking.")
+                self.is_tracking = False
+                # wait up to 5 s but wake immediately if stop() is called
+                self._stop_tracking_event.wait(timeout=5)
+                continue
+            else:
+                self.is_tracking = True
+
+                # compute gimbal corrections to point at the POI
+                if forward_heading:
+                    gimbal_yaw = 0.0
+                else:
+                    # TODO
+                    gimbal_yaw = 0.0
+                    pass
+
+                # roll is not used for pointing, but we can set it to 0 to keep the horizon level
+                gimbal_roll = 0.0
+
+                # compute pitch correction based on uav and POI world coordinates
+                az, el, rng = pm.geodetic2aer(self.latitude, self.longitude, self.altitude,
+                                              lat, lon, alt,
                                               deg=True)
                 gimbal_pitch = el
 
