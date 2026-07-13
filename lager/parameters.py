@@ -4,6 +4,7 @@ DATA_FOLDER_PREFIX = 'telemetry'
 CURRENT_DATA_FOLDER = 'current'
 
 # logging defaults if the module is run as an independent script
+LOGGING_LEVEL = "INFO"
 LOGGING_FILE_NAME = 'controller.log'
 LOGGING_FORMAT = '[%(asctime)s.%(msecs)03d %(levelname)s] (%(name)s): %(message)s'
 LOGGING_DATEFMT = '%Y-%m-%d %H:%M:%S'

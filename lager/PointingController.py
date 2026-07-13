@@ -20,8 +20,9 @@ from lager.GPIO import LED
 LOGGING_LEVEL = logging.INFO
 
 class PointingController:
-    def __init__(self, config_file, data_folder=None):
+    def __init__(self, configuration, data_folder=None, verbose=False):
         self.config = None
+        self.verbose = verbose
 
         # initialise status LED early so it can signal progress
         if params.ENABLE_LED_INDICATOR:
@@ -45,11 +46,18 @@ class PointingController:
             os.makedirs(self.data_folder)
 
         # configure logging only if data_folder is not externally specified (to avoid overwriting existing logs)
-        if data_folder is None:
-            logging_file = os.path.join(self.data_folder, params.LOGGING_FILE_NAME)
-            logging.basicConfig(level=LOGGING_LEVEL, format=params.LOGGING_FORMAT, datefmt=params.LOGGING_DATEFMT, handlers=[
-                logging.FileHandler(logging_file)
-            ])
+        if not logging.getLogger().hasHandlers():
+            logger = logging.getLogger()
+            logger.setLevel(getattr(logging, params.LOGGING_LEVEL))
+            if self.verbose:
+                handlers = [logging.StreamHandler(sys.stdout), 
+                            logging.FileHandler(os.path.join(self.data_folder, params.LOGGING_FILE_NAME))]
+            else:
+                handlers = [logging.FileHandler(os.path.join(self.data_folder, params.LOGGING_FILE_NAME))]
+            for handler in handlers:
+                handler.setFormatter(logging.Formatter(params.LOGGING_FORMAT, params.LOGGING_DATEFMT))
+                logger.addHandler(handler)
+
         self.logger = logging.getLogger(__name__)
 
         self.logger.info(f"Controller initialized at {timestamp}")
@@ -65,23 +73,22 @@ class PointingController:
 
         # load configuration from the specified YAML file or dictionary
         try:
-            if isinstance(config_file, dict):
-                self.config = config_file
+            if isinstance(configuration, dict):
+                self.config = configuration
                 self.logger.info("Configuration loaded from provided dictionary")
             else:
-                with open(config_file, 'r') as file:
+                with open(configuration, 'r') as file:
                     self.config = yaml.safe_load(file)
-                self.logger.info(f"Configuration loaded successfully from {config_file}")
+                self.logger.info(f"Configuration loaded successfully from {configuration}")
             
                 # copy the configuration file to the data folder for reference
-                config_copy_path = os.path.join(self.data_folder, os.path.basename(config_file))
+                config_copy_path = os.path.join(self.data_folder, os.path.basename(configuration))
                 with open(config_copy_path, 'w') as file:
                     yaml.dump(self.config, file)
                 self.logger.info(f"Configuration copied to {config_copy_path}")
 
         except Exception as e:
             self.logger.error(f"Failed to load configuration: {e}")
-            sys.exit(1)
 
         # check if the configuration is valid
         if 'name' not in self.config:
@@ -129,14 +136,14 @@ class PointingController:
         # check uav configuration
         if 'uav' not in self.config:
             self.logger.warning("Configuration file is missing 'uav' section.")
-            return None
+            return
         
         if 'name' in self.config['uav']:
             name = self.config['uav']['name']
             self.logger.info(f"UAV type specified in configuration: {name}")
         else:
             self.logger.warning("UAV configuration is missing 'name' field.")
-            return None
+            return
         
         if 'simulator' in self.config['uav']:
             simulator = self.config['uav']['simulator']
@@ -157,7 +164,7 @@ class PointingController:
             self.logger.info(f"UAV connection timeout: {connection_timeout}")
         else:
             self.logger.warning("UAV configuration is missing 'connection' section, which is required for UAV connection.")
-            return None
+            return
         
         if 'telemetry' in self.config['uav']:
             telemetry_frequency = self.config['uav']['telemetry'].get('frequency', drone_params.TELEMETRY_FREQ)
@@ -188,14 +195,14 @@ class PointingController:
         # check gimbal configuration
         if 'gimbal' not in self.config:
             self.logger.error("Configuration file is missing 'gimbal' section. A gimbal is required.")
-            sys.exit(1)
+            return
         
         if 'name' in self.config['gimbal']:
             name = self.config['gimbal']['name']
             self.logger.info(f"Gimbal type specified in configuration: {name}")
         else:
             self.logger.error("Gimbal configuration is missing 'name' field. A gimbal name is required.")
-            sys.exit(1)
+            return
         
         if 'simulator' in self.config['gimbal']:
             simulator = self.config['gimbal']['simulator']
@@ -216,7 +223,7 @@ class PointingController:
             self.logger.info(f"Gimbal connection timeout: {connection_timeout}")
         else:
             self.logger.error("Gimbal configuration is missing 'connection' section. A gimbal connection is required.")
-            sys.exit(1)
+            return
         
         if 'telemetry' in self.config['gimbal']:
             telemetry_frequency = self.config['gimbal']['telemetry'].get('frequency', None)
@@ -240,7 +247,7 @@ class PointingController:
         
         else:
             self.logger.error("Unknown gimbal type found in configuration. A supported gimbal is required.")
-            sys.exit(1)
+            pass
 
     def get_config(self):
         return self.config
