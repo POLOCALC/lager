@@ -46,14 +46,15 @@ class PointingController:
             os.makedirs(self.data_folder)
 
         # configure logging only if data_folder is not externally specified (to avoid overwriting existing logs)
+        logging_file = os.path.join(self.data_folder, params.LOGGING_FILE_NAME)
         if not logging.getLogger().hasHandlers():
             logger = logging.getLogger()
             logger.setLevel(getattr(logging, params.LOGGING_LEVEL))
             if self.verbose:
                 handlers = [logging.StreamHandler(sys.stdout), 
-                            logging.FileHandler(os.path.join(self.data_folder, params.LOGGING_FILE_NAME))]
+                            logging.FileHandler(logging_file)]
             else:
-                handlers = [logging.FileHandler(os.path.join(self.data_folder, params.LOGGING_FILE_NAME))]
+                handlers = [logging.FileHandler(logging_file)]
             for handler in handlers:
                 handler.setFormatter(logging.Formatter(params.LOGGING_FORMAT, params.LOGGING_DATEFMT))
                 logger.addHandler(handler)
