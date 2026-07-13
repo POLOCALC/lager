@@ -29,7 +29,7 @@ class POI():
             self.tracking_thread = threading.Thread(target=self._track_poi_using_uav, args=(uav, gimbal, forward_heading), daemon=True)
         elif gnss_source is not None:
             logger.info(f"Tracking POI {self.name} using GNSS source telemetry")
-            self.tracking_thread = threading.Thread(target=self._track_poi_using_gnss_source, args=(gnss_source, gimbal), daemon=True)
+            self.tracking_thread = threading.Thread(target=self._track_poi_using_gnss_source, args=(gnss_source, gimbal, forward_heading), daemon=True)
         self.tracking_thread.start()
 
     def _track_poi_using_uav(self, uav, gimbal, forward_heading):
