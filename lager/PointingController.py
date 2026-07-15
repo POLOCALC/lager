@@ -182,11 +182,6 @@ class PointingController:
                                  simulator=simulator,
                                  output_dir=self.data_folder)
             return uav
-        
-        elif name == 'Helikite':
-            uav = Helikite.Balloon(gnss_source=None, 
-                                   keys=None)
-            return uav
         else:
             self.logger.warning("Unknown UAV type found in configuration.")
             return None
