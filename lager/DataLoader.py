@@ -2,7 +2,7 @@ import os
 import yaml
 import pickle
 
-from lager.UAVs import DJI_M600, Helikite
+from lager.UAVs import DJI_M600
 from lager.Gimbals import Gremsy_T7
 import lager.parameters as params
 

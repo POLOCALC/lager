@@ -6,7 +6,6 @@ import os
 import threading
 
 from lager.UAVs import DJI_M600
-from lager.UAVs import Helikite
 from lager.Gimbals import Gremsy_T7
 import lager.UAVs.DJI_M600.parameters as drone_params
 import lager.Gimbals.Gremsy_T7.parameters as gimbal_params
