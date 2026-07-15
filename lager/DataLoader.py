@@ -34,8 +34,6 @@ class DataLoader:
 
                 if self.config['uav']['name'] == 'DJI M600':
                     self.drone_data_loader = DJI_M600.DataLoader(data_folder)
-                elif self.config['uav']['name'] == 'Helikite':
-                    self.drone_data_loader = Helikite.DataLoader(data_folder)
             else:
                 print("  Warning: 'name' key not found in 'uav' configuration")
         else:
