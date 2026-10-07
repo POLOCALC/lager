@@ -17,11 +17,11 @@ def main():
     data = loader.get_data(force_decode=args.force_decode)
 
     # get the drone and gimbal data from the loaded data as pandas dataframes
-    drone_data = data['drone']
+    uav_data = data['uav']
     gimbal_data = data['gimbal']
     
-    print("Drone data:")
-    print(drone_data)
+    print("UAV data:")
+    print(uav_data)
     print("Gimbal data:")
     print(gimbal_data)
 

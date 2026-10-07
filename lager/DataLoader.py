@@ -10,7 +10,7 @@ class DataLoader:
 
     def __init__(self, data_folder):
         self.data_folder = data_folder
-        self.drone_data_loader = None
+        self.uav_data_loader = None
         self.gimbal_data_loader = None
 
         # look for a yaml configuration file in the data folder
@@ -27,13 +27,28 @@ class DataLoader:
             self.config = yaml.safe_load(f)
         print(f"Configuration loaded from {config_file}:")
 
-        # check if the configuration contains drone key
-        if 'uav' in self.config:
-            if 'name' in self.config['uav']:
-                print(f"  UAV: {self.config['uav']['name']}")
+        # check if the configuration contains a 'pointing_controller' key
+        if 'pointing_controller' in self.config:
+            if 'name' in self.config['pointing_controller']:
+                print(f"  Pointing Controller: {self.config['pointing_controller']['name']}")
+                if self.config['pointing_controller']['name'].lower() == 'lager':
+                    configuration = self.config['pointing_controller']
+            else:
+                print("  Warning: 'name' key not found in 'pointing_controller' configuration")
+                # exit the program if the pointing_controller name is not found
+                raise ValueError("No 'name' key found in 'pointing_controller' configuration")
+        else:
+            print("  No 'pointing_controller' key not found in configuration")
+            # exit the program if the pointing_controller key is not found
+            raise ValueError("No 'pointing_controller' key found in configuration")
 
-                if self.config['uav']['name'] == 'DJI M600':
-                    self.drone_data_loader = DJI_M600.DataLoader(data_folder)
+        # check if the configuration contains drone key
+        if 'uav' in configuration:
+            if 'name' in configuration['uav']:
+                print(f"  UAV: {configuration['uav']['name']}")
+
+                if configuration['uav']['name'] == 'DJI M600':
+                    self.uav_data_loader = DJI_M600.DataLoader(data_folder)
             else:
                 print("  Warning: 'name' key not found in 'uav' configuration")
         else:
@@ -41,11 +56,11 @@ class DataLoader:
 
 
         # check if the configuration contains gimbal key
-        if 'gimbal' in self.config:
-            if 'name' in self.config['gimbal']:
-                print(f"  Gimbal: {self.config['gimbal']['name']}")
+        if 'gimbal' in configuration:
+            if 'name' in configuration['gimbal']:
+                print(f"  Gimbal: {configuration['gimbal']['name']}")
 
-                if self.config['gimbal']['name'] == 'Gremsy T7':
+                if configuration['gimbal']['name'] == 'Gremsy T7':
                     self.gimbal_data_loader = Gremsy_T7.DataLoader(data_folder)
             else:
                 print("  Warning: 'name' key not found in 'gimbal' configuration")
@@ -70,8 +85,8 @@ class DataLoader:
 
         data = {}
 
-        if self.drone_data_loader is not None:
-            data['drone'] = self.drone_data_loader.get_data()
+        if self.uav_data_loader is not None:
+            data['uav'] = self.uav_data_loader.get_data()
 
         if self.gimbal_data_loader is not None:
             data['gimbal'] = self.gimbal_data_loader.get_data()

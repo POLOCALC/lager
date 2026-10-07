@@ -1,17 +1,23 @@
 import threading
+import time
 
 class TelemetryState():
     def __init__(self):
         self._lock = threading.Lock()
         self.state = {}
+        self._last_update = None
 
     def update(self, params):
         with self._lock:
             self.state.update(params)   
+            self._last_update = time.monotonic()
 
     def get(self):
         with self._lock:
             return dict(self.state)
+
+    def age(self):
+        return time.monotonic() - self._last_update if self._last_update else float('inf')
         
     def get_attitude(self):
         with self._lock:
