@@ -3,13 +3,12 @@ import logging
 import sys
 import time
 import os
-import threading
 
-from lager.UAVs import DJI_M600
+from lager.UAVs import DJI_M600, DJI_M400
+
 from lager.Gimbals import Gremsy_T7
-import lager.UAVs.DJI_M600.parameters as drone_params
 import lager.Gimbals.Gremsy_T7.parameters as gimbal_params
-import lager.cli as cli
+
 import lager.POI as POI
 
 import lager.parameters as params
@@ -94,13 +93,6 @@ class PointingController:
         if 'name' not in self.config:
             self.logger.info("Configuration file is missing 'name' field.")
             name = "Default Pointing Controller"
-        if 'display' not in self.config:
-            self.logger.info("Configuration file is missing 'display' field. Disabling display by default.")
-            display_enabled = False
-            refresh_rate = 1
-        else:
-            display_enabled = self.config['display'].get('enable', False)
-            refresh_rate = self.config['display'].get('refresh_rate', 1)
 
         # get uav type and configuration
         self.uav = self.get_uav()
@@ -110,27 +102,6 @@ class PointingController:
 
         # get POI object if configured
         self.poi = self.get_POI()
-
-        # start display if enabled in configuration
-        if display_enabled:
-            if self.uav is not None:
-                self.uav_panel = self.uav.render_panel
-            else:
-                self.uav_panel = lambda: None
-            
-            if self.gimbal is not None:
-                self.gimbal_panel = self.gimbal.render_panel
-            else:
-                self.gimbal_panel = lambda: None
-
-            if self.poi is not None:
-                poi_data = self.poi.get_data
-            else:
-                poi_data = lambda: None
-
-            display_thread = threading.Thread(target=cli.live_display, args=(self.uav_panel, self.gimbal_panel, logging_file, poi_data, refresh_rate), daemon=True)
-            display_thread.start()
-
 
     def get_uav(self) -> object:
         # check uav configuration
@@ -153,9 +124,9 @@ class PointingController:
         if 'connection' in self.config['uav']:
             connection_type = self.config['uav']['connection'].get('type', 'unknown')
             connection_protocol = self.config['uav']['connection'].get('protocol', 'unknown')
-            connection_port = self.config['uav']['connection'].get('port', 'unknown')
-            connection_baudrate = self.config['uav']['connection'].get('baudrate', 'unknown')
-            connection_timeout = self.config['uav']['connection'].get('timeout', 'unknown')
+            connection_port = self.config['uav']['connection'].get('port', None)
+            connection_baudrate = self.config['uav']['connection'].get('baudrate', None)
+            connection_timeout = self.config['uav']['connection'].get('timeout', None)
 
             self.logger.info(f"UAV connection type: {connection_type}")
             self.logger.info(f"UAV connection protocol: {connection_protocol}")
@@ -165,20 +136,55 @@ class PointingController:
         else:
             self.logger.warning("UAV configuration is missing 'connection' section, which is required for UAV connection.")
             return
-        
-        if 'telemetry' in self.config['uav']:
-            telemetry_frequency = self.config['uav']['telemetry'].get('frequency', drone_params.TELEMETRY_FREQ)
-            self.logger.info(f"UAV telemetry frequency: {telemetry_frequency} Hz")
-        else:
-            telemetry_frequency = drone_params.TELEMETRY_FREQ
 
-        
+        if 'telemetry' in self.config['uav']:
+            telemetry_frequency = self.config['uav']['telemetry'].get('frequency', None)
+            if telemetry_frequency is not None:
+                self.logger.info(f"UAV telemetry frequency: {telemetry_frequency} Hz")
+
+            telemetry_frequency_slow = self.config['uav']['telemetry'].get('slow_frequency', None)
+            if telemetry_frequency_slow is not None:
+                self.logger.info(f"UAV telemetry slow frequency: {telemetry_frequency_slow} Hz")
+
+            telemetry_frequency_imu = self.config['uav']['telemetry'].get('imu_frequency', None)
+            if telemetry_frequency_imu is not None:
+                self.logger.info(f"UAV telemetry IMU frequency: {telemetry_frequency_imu} Hz")
+
+            telemetry_frequency_status = self.config['uav']['telemetry'].get('status_frequency', None)
+            if telemetry_frequency_status is not None:
+                self.logger.info(f"UAV telemetry status frequency: {telemetry_frequency_status} Hz")
+
+            telemetry_stats_s = self.config['uav']['telemetry'].get('stats_s', None)
+            if telemetry_stats_s is not None:
+                self.logger.info(f"UAV telemetry stats interval: {telemetry_stats_s} seconds")
+
+            telemetry_binary = self.config['uav']['telemetry'].get('binary', None)
+            if telemetry_binary is not None:
+                self.logger.info(f"UAV telemetry binary: {telemetry_binary}")
+        else:
+            self.logger.warning("UAV configuration is missing 'telemetry' section, which is required for telemetry settings.")
+            return
+
         # check if the drone type is supported
         if name == 'DJI M600':
-            uav = DJI_M600.Drone(port=connection_port,
+            self.logger.info(f"UAV telemetry frequency: {telemetry_frequency} Hz")
+            uav = DJI_M600.Drone(device=connection_port,
                                  baudrate=connection_baudrate,
                                  timeout=connection_timeout,
                                  telemetry_frequency=telemetry_frequency,
+                                 simulator=simulator,
+                                 output_dir=self.data_folder)
+            return uav
+        elif name == 'DJI M400':
+            uav = DJI_M400.Drone(device=connection_port,
+                                 binary=telemetry_binary,
+                                 fast_hz=telemetry_frequency,
+                                 slow_hz=telemetry_frequency_slow,
+                                 imu_hz=telemetry_frequency_imu,
+                                 status_hz=telemetry_frequency_status,
+                                 socket_path=self.config['uav']['connection'].get('socket', None),
+                                 stats_s=telemetry_stats_s,
+                                 connect_timeout=connection_timeout,
                                  simulator=simulator,
                                  output_dir=self.data_folder)
             return uav

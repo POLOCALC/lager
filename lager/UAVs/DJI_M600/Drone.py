@@ -1,4 +1,3 @@
-import math
 import logging
 import time
 import struct
@@ -6,10 +5,6 @@ import threading
 import queue
 import random
 import os
-from rich.table import Table
-from rich.panel import Panel
-from rich.layout import Layout
-from rich.console import Group
 
 import lager.UAVs.DJI_M600.parameters as params
 import lager.UAVs.DJI_M600.connection as connection
@@ -20,31 +15,24 @@ import lager.UAVs.DJI_M600.telemetry_state as telemetry_state
 # use the Controller.py logging configuration
 logger = logging.getLogger(__name__)
 
-# Sub-cell block characters for artificial horizon smoothing.
-# Each tuple is (fill_fraction_upper_bound, character).
-# Characters fill from the bottom of the terminal cell upward.
-_HORIZON_BLOCKS_UNICODE = [
-    (0.125, "▁"), (0.25, "▂"), (0.375, "▃"), (0.5, "▄"),
-    (0.625, "▅"), (0.75, "▆"), (0.875, "▇"), (1.0, "█"),
-]
-_HORIZON_BLOCKS_ASCII = [
-    (0.125, "."), (0.25, ":"), (0.375, "-"), (0.5, "="),
-    (0.625, "+"), (0.75, "*"), (0.875, "#"), (1.0, "@"),
-]
-
 class Drone:
-    def __init__(self, port: str= params.DEFAULT_SERIAL_PORT, 
+    def __init__(self, device: str= params.DEFAULT_SERIAL_PORT, 
                  baudrate: int = params.DEFAULT_BAUDRATE,
                  timeout: float = params.SERIAL_TIMEOUT,
                  telemetry_frequency: int = params.TELEMETRY_FREQ,
                  simulator: bool = False,
                  output_dir: str = ""):
+
+        self.device = device if device not in [None, ""] else params.DEFAULT_SERIAL_PORT
+        self.baudrate = baudrate if baudrate is not None else params.DEFAULT_BAUDRATE
+        self.timeout = timeout if timeout is not None else params.SERIAL_TIMEOUT
+        self.telemetry_frequency = telemetry_frequency if telemetry_frequency is not None else params.TELEMETRY_FREQ
         
         # output directory for telemetry log
         self.output_dir = output_dir
         
         # serial connection 
-        self.connection = connection.DroneConnection(port, baudrate, timeout)
+        self.connection = connection.DroneConnection(self.device, self.baudrate, self.timeout)
 
         # firmware version info
         self.version_name = None
@@ -55,9 +43,6 @@ class Drone:
         if self.simulator:
             logger.info("Lab test simulator mode enabled - no serial connection will be made.")
             self.version_name = "Lab test simulator"
-
-        # other state variables
-        self.telemetry_frequency = telemetry_frequency
 
         self.stop_event = threading.Event()
         self.log_queue  = queue.Queue(maxsize=params.LOG_QUEUE_MAXSIZE)
@@ -576,226 +561,3 @@ class Drone:
                 i = idx + 1; continue
             yield idx, frame
             i = idx + length
-    
-    def render_artificial_horizon_panel(self, pitch_deg, roll_deg, width=33, height=11):
-        """
-        Render an artificial horizon (attitude indicator) as a multiline Rich markup
-        string, suitable for embedding directly in a Panel or Layout.
-
-        Parameters:
-        -----------
-            pitch_deg : float  Pitch angle in degrees (+up / -down).
-            roll_deg  : float  Roll  angle in degrees (+right wing down).
-            width     : int    Total character width  including side borders.
-            height    : int    Total character height including top/bottom borders.
-        """
-        # clamp roll to avoid math.tan() singularity near ±90°
-        roll_deg  = max(-89.0, min(89.0, roll_deg))
-        pitch = math.radians(pitch_deg)
-        roll  = math.radians(roll_deg)
-
-        center_row = height // 2
-        center_col = width  // 2
-
-        # choose block character set: Unicode on any terminal except bare linux console
-        block_chars = _HORIZON_BLOCKS_UNICODE if os.environ.get('TERM', '') != 'linux' else _HORIZON_BLOCKS_ASCII
-
-        # scale factor: ±45° pitch maps to ±half the drawable height
-        pitch_scale = (height / 2) / math.radians(45)
-
-        # precompute horizon row position for every column
-        # (horizon only depends on col, not row — no need to recompute inside the row loop)
-        horizon_for_col = [
-            center_row - (col - center_col) * math.tan(roll) + pitch * pitch_scale
-            for col in range(width)
-        ]
-
-        # precompute center crosshair columns and marker characters
-        crosshair_cols  = set(range(center_col - 2, center_col + 3))
-        crosshair_chars = "──┼──"   # indexed by col - (center_col - 2)
-
-        lines = []
-        lines.append("[white]┌" + "─" * (width - 2) + "┐[/white]")
-
-        for row in range(1, height - 1):
-            line = ""
-            for col in range(width):
-                horizon = horizon_for_col[col]
-
-                # center crosshair takes priority over sky/ground fill
-                if row == center_row and col in crosshair_cols:
-                    line += f"[white]{crosshair_chars[col - (center_col - 2)]}[/white]"
-
-                elif col == 0:
-                    line += "[white]├[/white]" if abs(row - center_row) % 3 == 0 else "[white]│[/white]"
-
-                elif col == width - 1:
-                    line += "[white]┤[/white]" if abs(row - center_row) % 3 == 0 else "[white]│[/white]"
-
-                else:
-                    # rel = horizon - row:
-                    #   rel >= 1  → horizon is below this cell entirely → sky (space)
-                    #   rel <  0  → horizon is above this cell entirely → ground (full block)
-                    #   0 <= rel < 1 → horizon passes through this cell → sub-cell blend
-                    rel = horizon - row
-                    if rel >= 1.0:
-                        line += " "
-                    elif rel < 0.0:
-                        line += f"[green]{block_chars[-1][1]}[/green]"
-                    else:
-                        # fill fraction from bottom = 1 - rel
-                        # (rel=0.0 → full ground; rel=0.99 → barely any ground)
-                        fill = 1.0 - rel
-                        char = block_chars[-1][1]
-                        for threshold, c in block_chars:
-                            if fill <= threshold:
-                                char = c
-                                break
-                        line += f"[green]{char}[/green]"
-
-            lines.append(line)
-
-        # bottom border with live roll/pitch readout embedded in the border line
-        readout = f"R{roll_deg:+.0f}° P{pitch_deg:+.0f}°"
-        pad = width - 2 - len(readout)
-        pad_l, pad_r = pad // 2, pad - pad // 2
-        lines.append(
-            f"[white]└{'─' * pad_l}[/white]"
-            f"[bold yellow]{readout}[/bold yellow]"
-            f"[white]{'─' * pad_r}┘[/white]"
-        )
-
-        return '\n'.join(lines)
-    
-    def render_panel(self) -> Panel:
-        # read current telemetry data from the telemetry state
-        drone_data = self.telemetry_state.get()
-
-        if not drone_data:
-            return Panel("[dim]waiting for telemetry frames...[/dim]",
-                         title="Telemetry", border_style="blue")
-
-        t_s = drone_data.get('t_ticks', 0) * params.FC_TICK_MS / 1000.0
-        q   = drone_data.get('q', [0, 0, 0, 0])  # quaternion as (w, x, y, z)
-
-        title = f"[bold]Drone telemetry - {self.version_name} (FW 0x{self.fw_version:08X})[/bold]"
-
-        def kv_table() -> Table:
-            t = Table.grid(expand=True, padding=(0, -5))
-            t.add_column(justify="left", style="bold yellow", no_wrap=False)
-            t.add_column(justify="left", no_wrap=True)
-            return t
-
-        # column 1: timing, attitude, quaternion, accel
-        c1 = kv_table()
-        c1.add_row("Time (s)",   f"{t_s:.1f}")
-        c1.add_row("Msg flag",  f"0x{drone_data.get('flag', 0):04X}")
-        c1.add_row("", "")
-        c1.add_row("[bold blue] ATTITUDE (°)[/bold blue]", "")
-        c1.add_row("Roll",  f"{drone_data.get('roll', 0):+3.3f}")
-        c1.add_row("Pitch", f"{drone_data.get('pitch', 0):+3.3f}")
-        c1.add_row("Yaw",   f"{drone_data.get('yaw', 0):+3.3f}")
-        c1.add_row("[bold blue] ACCEL (g)[/bold blue]", "")
-        c1.add_row("x", f"{drone_data.get('ax', 0):+.4f}")
-        c1.add_row("y", f"{drone_data.get('ay', 0):+.4f}")
-        c1.add_row("z", f"{drone_data.get('az', 0):+.4f}")
-        c1.add_row("[bold blue] VELOCITY (m/s)[/bold blue]", "")
-        c1.add_row("x",   f"{drone_data.get('vx', 0):+.4f}")
-        c1.add_row("y",   f"{drone_data.get('vy', 0):+.4f}")
-        c1.add_row("z",   f"{drone_data.get('vz', 0):+.4f}")
-        c1.add_row("Info", f"0x{drone_data.get('vel_info', 0):02X}")
-        c1.add_row("[bold blue] GYRO (rad/s)[/bold blue]", "")
-        c1.add_row("x",  f"{drone_data.get('gx', 0):+.5f}")
-        c1.add_row("y",  f"{drone_data.get('gy', 0):+.5f}")
-        c1.add_row("z",  f"{drone_data.get('gz', 0):+.5f}")
-        c1.add_row("[bold blue] MAG (counts)[/bold blue]", "")
-        c1.add_row("x", f"{drone_data.get('mx', 0):6d}")
-        c1.add_row("y", f"{drone_data.get('my', 0):6d}")
-        c1.add_row("z", f"{drone_data.get('mz', 0):6d}")
-        c1.add_row("[bold blue] QUATERNION[/bold blue]", "")
-        c1.add_row("w",   f"{q[0]:+.5f}")
-        c1.add_row("x",   f"{q[1]:+.5f}")
-        c1.add_row("y",   f"{q[2]:+.5f}")
-        c1.add_row("z",   f"{q[3]:+.5f}")
-        c1.add_row("|q|", f"{drone_data.get('qmag', 0):.6f}")
-        c1.add_row("[bold blue] CANBUS GIMBAL[/bold blue]", "")
-        c1.add_row("Roll (°)",  f"{drone_data.get('gim_roll', 0):+3.2f}")
-        c1.add_row("Pitch (°)", f"{drone_data.get('gim_pitch', 0):+3.2f}")
-        c1.add_row("Yaw (°)",   f"{drone_data.get('gim_yaw', 0):+3.2f}")
-        c1.add_row("Flags", f"0x{drone_data.get('gim_flags', 0):02X}")
-
-        # column 2: GPS fused, GPS raw, RTK
-        c2 = kv_table()
-        c2.add_row("Status",       params.FLIGHT_STATUS.get(drone_data.get('flight_status', 0), "Unknown"))
-        c2.add_row("Disp. mode",    params.DISPLAY_MODE.get(drone_data.get('display_mode', 0), "Unknown"))
-        c2.add_row("", "")
-        c2.add_row("[bold blue] RAW GPS[/bold blue]", "")
-        c2.add_row("Lat (°)",  f"{drone_data.get('gps_lat_deg', 0):+.6f}")
-        c2.add_row("Lon (°)",  f"{drone_data.get('gps_lon_deg', 0):+.6f}")
-        c2.add_row("HFSL (m)", f"{drone_data.get('gps_hfsl_m', 0):.2f}")
-        c2.add_row("vN (cm/s)",   f"{drone_data.get('gps_vn_cms', 0):+.2f}")
-        c2.add_row("vE (cm/s)",   f"{drone_data.get('gps_ve_cms', 0):+.2f}")
-        c2.add_row("vD (cm/s)",   f"{drone_data.get('gps_vd_cms', 0):+.2f}")
-        c2.add_row("N sat.",  str(drone_data.get('gps_nsv', 0)))
-        c2.add_row("HDOP", f"{drone_data.get('hdop', 0):.2f}")
-        c2.add_row("PDOP", f"{drone_data.get('pdop', 0):.2f}")
-        c2.add_row("[bold blue] RTK[/bold blue]", "")
-        c2.add_row("Lat (°)",        f"{drone_data.get('rtk_lat_deg', 0):+.6f}")
-        c2.add_row("Lon (°)",        f"{drone_data.get('rtk_lon_deg', 0):+.6f}")
-        c2.add_row("HFSL (m)",       f"{drone_data.get('rtk_hfsl_m', 0):.2f}")
-        c2.add_row("Yaw (°)",        f"{drone_data.get('rtk_yaw_deg', 0):+.1f}")
-        c2.add_row("Pos Health", str(drone_data.get('rtk_pos_health', 0)))
-        c2.add_row("Yaw Health", str(drone_data.get('rtk_yaw_health', 0)))
-        c2.add_row("[bold blue] FUSED GPS[/bold blue]", "")
-        c2.add_row("Lat (°)",     f"{drone_data.get('lat_deg', 0):+.6f}")
-        c2.add_row("Lon (°)",     f"{drone_data.get('lon_deg', 0):+.6f}")
-        c2.add_row("Alt (m)",     f"{drone_data.get('alt_m', 0):.2f}")
-        c2.add_row("Hgt AGL (m)", f"{drone_data.get('hgt_m', 0):.3f}")
-        c2.add_row("Health",  str(drone_data.get('gps_health', 0)))
-        c2.add_row("[bold blue] RC STATUS[/bold blue]", "")
-        c2.add_row("Roll",  str(drone_data.get('rc_roll', 0)))
-        c2.add_row("Pitch", str(drone_data.get('rc_pitch', 0)))
-        c2.add_row("Yaw",   str(drone_data.get('rc_yaw', 0)))
-        c2.add_row("Throttle",   str(drone_data.get('rc_thr', 0)))
-        c2.add_row("Mode",  params.RC_MODE.get(drone_data.get('rc_mode', 0), "Unknown"))
-        c2.add_row("Gear",  str(drone_data.get('rc_gear', 0)))
-
-        # column 3: mag, RC, gimbal, status
-        c3 = kv_table()
-        c3.add_row("Landing gear", params.LANDING_GEAR_MODE.get(drone_data.get('landing_gear', 0), "Unknown"))
-        c3.add_row("Errors",       params.STATUS_ERROR.get(drone_data.get('flight_error', 0), "Unknown"))
-        c3.add_row("", "")
-        c3.add_row("[bold blue] BATTERY[/bold blue]", "")
-        c3.add_row("Level (%)", f"{drone_data.get('bat_percentage', 0):.1f}")
-        c3.add_row("Capacity (mAh)", f"{drone_data.get('bat_capacity_mah', 0):.2f}")
-        c3.add_row("Voltage (mV)",   f"{drone_data.get('bat_voltage_mv', 0):.2f}")
-        c3.add_row("Current (mA)",   f"{drone_data.get('bat_current_ma', 0):.2f}")
-        c3.add_row("[bold blue] SDK CONTROL[/bold blue]", "")
-        c3.add_row("Mode", f"{drone_data.get('sdk_control_mode', 0)}")
-        c3.add_row("Device", f"{drone_data.get('sdk_device_bits', 0)}")
-
-        # add artificial horizon in the center column
-        horizon_panel = self.render_artificial_horizon_panel(
-            pitch_deg=drone_data.get('pitch', 0),
-            roll_deg=drone_data.get('roll', 0),
-            width=33,
-            height=11,
-        )
-
-        inner = Layout()
-        inner.split_row(
-            Layout(name="col1", minimum_size=30),
-            Layout(name="col2", minimum_size=50),
-            Layout(name="col3", minimum_size=30),
-        )
-        inner['col3'].split_column(
-            Layout(name="col3_top"),
-            Layout(name="col3_bottom"),
-        )
-
-        inner['col1'].update(Layout(c1))
-        inner['col2'].update(Layout(c2))
-        inner['col3_top'].update(Layout(c3))
-        inner['col3_bottom'].update(Layout(horizon_panel))
-
-        return Panel(inner, title=title, border_style="blue", title_align="left")

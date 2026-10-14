@@ -59,6 +59,8 @@ lager/
 │   └── DJI_M600/           # DJI M600 driver (connection, telemetry, utils)
 ├── Gimbals/
 │   └── Gremsy_T7/          # Gremsy T7 driver (MAVLink, telemetry, goto)
+├── modules/
+│   └── Payload-SDK/         # git submodule: DJI Payload SDK fork, Matrice 400 telemetry bridge (psdk_telemetry)
 └── tests/
     ├── data/
     │   └── gimbal_motion/   # Logged data from gimbal movement tests
@@ -120,7 +122,7 @@ Key dependencies:
 ## Installation
 
 ```bash
-git clone https://github.com/POLOCALC/lager.git
+git clone --recurse-submodules https://github.com/POLOCALC/lager.git
 cd lager
 pip install -r requirements.txt
 ```
@@ -273,6 +275,9 @@ Driver for the DJI M600 using the DJI OSDK protocol over serial. Provides:
 - Serial connection management.
 - Telemetry subscription and background logging.
 - A `rich` panel renderer for the live display.
+
+### `modules/Payload-SDK`
+Git submodule with POLOCALC's fork of DJI's Payload SDK. It holds `psdk_telemetry`, the C program that gets the Matrice 400 telemetry through the E-Port and streams it to lager, and the USB gadget setup for the Raspberry Pi. In an existing clone, fetch it with `git submodule update --init --recursive`. See [its README](modules/Payload-SDK/README.md) for configuration and build.
 
 ### `Gimbals/Gremsy_T7`
 Driver for the Gremsy T7 using MAVLink over serial. Provides:

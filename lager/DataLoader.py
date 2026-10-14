@@ -2,7 +2,7 @@ import os
 import yaml
 import pickle
 
-from lager.UAVs import DJI_M600
+from lager.UAVs import DJI_M600, DJI_M400
 from lager.Gimbals import Gremsy_T7
 import lager.parameters as params
 
@@ -49,6 +49,8 @@ class DataLoader:
 
                 if configuration['uav']['name'] == 'DJI M600':
                     self.uav_data_loader = DJI_M600.DataLoader(data_folder)
+                elif configuration['uav']['name'] == 'DJI M400':
+                    self.uav_data_loader = DJI_M400.DataLoader(data_folder)
             else:
                 print("  Warning: 'name' key not found in 'uav' configuration")
         else:
