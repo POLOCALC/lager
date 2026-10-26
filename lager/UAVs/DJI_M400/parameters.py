@@ -2,9 +2,9 @@
 DEFAULT_BINARY      = "psdk_telemetry"        # name on PATH (~/.local/bin) or absolute path
 DEFAULT_DEVICE      = "/dev/ttyGS0"           # only for a pre-check; the binary uses hal_uart.h
 IMU_HZ              = 0                       # imu group: IMU navigation data, 50 Hz only; 0 = off (link bandwidth)
-FAST_HZ             = 10                      # fast group: attitude, IMU, altitudes, GPS/RTK, fused position, obstacles, RC
-STATUS_HZ           = 5                       # status group: visual odometry, RC link, GPS quality, flight state, ESCs
-SLOW_HZ             = 1                       # slow group: batteries, GPS date/time, home point
+FAST_HZ             = 10                      # fast group: attitude, IMU, altitudes, fused position, obstacles, RC
+STATUS_HZ           = 5                       # status group: GPS and RTK (5 Hz on the M400), visual odometry, RC link, flight state, ESCs
+SLOW_HZ             = 1                       # slow group: battery, GPS date/time, home point
                                               # allowed: 1, 5, 10, 50, 100, 200, 400 Hz; groups with the same rate
                                               # share the PSDK limit of 242 bytes per rate
 STATS_S             = 5                       # seconds between STATS records (0 = off)
@@ -46,5 +46,4 @@ EXIT_CODES = {0: "stopped",
               130: "interrupted while connecting"}
 
 # units (check on the ground, see step 9)
-RTK_YAW_SCALE       = 1.0                     # deg per unit of rtk_yaw: the PSDK header says deg, the M600 code uses 0.1
 DOP_SCALE           = 0.01                    # hdop/pdop unit (PSDK header: 100 = 1.00)

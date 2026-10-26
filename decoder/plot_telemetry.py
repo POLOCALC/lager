@@ -32,7 +32,17 @@ parser.add_argument("--dpi", type=int, default=120, help="Resolution of the save
 #   fields:   one subplot per entry: (column, label, unit, scale, step)
 #             scale multiplies the raw value (e.g. 1e-3 for mV -> V)
 #             step=True draws status/flag values as steps instead of lines
+# The UAV list serves both drones: a plot is drawn with the fields present in the data and skipped when there
+# are none, so the DJI M600 skips the M400-only plots and vice versa.
 # ---------------------------------------------------------------------------
+ESC_SLOTS = range(1, 9)                   # DJI_M400.utils.ESC_COUNT; unused slots are not in the data
+ANOMALY_FLAGS = [                         # DJI_M400.utils.ANOMALY_FLAGS
+    ("impact_in_air", "Impact in air"), ("random_fly", "Random fly"), ("height_ctrl_fail", "Height ctrl fail"),
+    ("tilt_ctrl_fail", "Tilt ctrl fail"), ("yaw_ctrl_fail", "Yaw ctrl fail"), ("falling", "Falling"),
+    ("wind_level1", "Wind level 1"), ("wind_level2", "Wind level 2"), ("compass_install_error", "Compass install"),
+    ("imu_install_error", "IMU install"), ("esc_temp_high", "ESC temp high"), ("esc_disconnected", "ESC disconnected"),
+    ("gps_yaw_error", "GPS yaw error")]
+
 UAV_PLOTS = [
     dict(file="uav_accelerometer", title="UAV accelerometer", fields=[
         ("ax", "Acc X", "g", 1, False),
@@ -106,7 +116,7 @@ UAV_PLOTS = [
         ("flight_status", "Flight status", "", 1, True),
         ("display_mode",  "Display mode",  "", 1, True),
         ("landing_gear",  "Landing gear",  "", 1, True),
-        ("flight_error",  "Flight error",  "", 1, True)]),
+        ("flight_error",  "Error (M600) / anomaly bits (M400)", "", 1, True)]),
     dict(file="uav_battery", title="UAV battery", fields=[
         ("bat_percentage",   "Charge",   "%",   1,    False),
         ("bat_voltage_mv",   "Voltage",  "V",   1e-3, False),
@@ -115,6 +125,101 @@ UAV_PLOTS = [
     dict(file="uav_sdk_status", title="UAV SDK status", fields=[
         ("sdk_control_mode", "Control mode", "", 1, True),
         ("sdk_device_bits",  "Device bits",  "", 1, True)]),
+    # --- DJI M400 only (PSDK topics) ---
+    dict(file="uav_esc_rpm", title="UAV ESC speed (M400)", fields=[
+        (f"esc{n}_rpm", f"ESC {n}", "rpm", 1, False) for n in ESC_SLOTS]),
+    dict(file="uav_esc_current", title="UAV ESC current (M400)", fields=[
+        (f"esc{n}_current_a", f"ESC {n}", "A", 1, False) for n in ESC_SLOTS]),
+    dict(file="uav_esc_voltage", title="UAV ESC voltage (M400)", fields=[
+        (f"esc{n}_voltage_v", f"ESC {n}", "V", 1, False) for n in ESC_SLOTS]),
+    dict(file="uav_esc_temperature", title="UAV ESC temperature (M400)", fields=[
+        (f"esc{n}_temp_c", f"ESC {n}", "°C", 1, False) for n in ESC_SLOTS]),
+    dict(file="uav_esc_flags", title="UAV ESC fault flags (M400: bit 0 stall, 1 no load, 2 unbalanced, "
+                                     "3 disconnected, 4 temperature high)", fields=[
+        (f"esc{n}_flags", f"ESC {n}", "", 1, True) for n in ESC_SLOTS]),
+    dict(file="uav_battery_detail", title="UAV battery details (M400)", fields=[
+        ("bat1_temp_c",        "Temperature",   "°C",  1, False),
+        ("bat1_remaining_mah", "Remaining",     "mAh", 1, False),
+        ("bat1_capacity_mah",  "Full capacity", "mAh", 1, False),
+        ("bat1_sop",           "SOP",           "%",   1, False),
+        ("bat1_closed_reason", "Closed reason", "",    1, True),
+        ("bat1_self_check",    "Self check",    "",    1, True),
+        ("bat1_cell_break",    "Cell break",    "",    1, True)]),
+    dict(file="uav_flight_anomaly", title="UAV flight anomalies (M400)", fields=[
+        (f"anomaly_{key}", label, "", 1, True) for key, label in ANOMALY_FLAGS]),
+    dict(file="uav_gps_velocity_m400", title="UAV GPS velocity (M400)", fields=[
+        ("gps_vel_x_cms", "X", "cm/s", 1, False),
+        ("gps_vel_y_cms", "Y", "cm/s", 1, False),
+        ("gps_vel_z_cms", "Z", "cm/s", 1, False)]),
+    dict(file="uav_rtk_velocity", title="UAV RTK velocity (M400)", fields=[
+        ("rtk_vel_x_cms", "X", "cm/s", 1, False),
+        ("rtk_vel_y_cms", "Y", "cm/s", 1, False),
+        ("rtk_vel_z_cms", "Z", "cm/s", 1, False)]),
+    dict(file="uav_acceleration_body", title="UAV acceleration, body frame, gravity included (M400)", fields=[
+        ("acc_body_x", "X", "g", 1, False),
+        ("acc_body_y", "Y", "g", 1, False),
+        ("acc_body_z", "Z", "g", 1, False)]),
+    dict(file="uav_acceleration_ground", title="UAV acceleration, ground frame, gravity removed (M400)", fields=[
+        ("acc_ground_x", "X", "m/s²", 1, False),
+        ("acc_ground_y", "Y", "m/s²", 1, False),
+        ("acc_ground_z", "Z", "m/s²", 1, False)]),
+    dict(file="uav_acceleration_raw", title="UAV acceleration, raw IMU, gravity removed (M400)", fields=[
+        ("acc_raw_x", "X", "m/s²", 1, False),
+        ("acc_raw_y", "Y", "m/s²", 1, False),
+        ("acc_raw_z", "Z", "m/s²", 1, False)]),
+    dict(file="uav_gyroscope_fused", title="UAV angular rate, fused, ground frame (M400)", fields=[
+        ("gyro_fused_x", "X", "rad/s", 1, False),
+        ("gyro_fused_y", "Y", "rad/s", 1, False),
+        ("gyro_fused_z", "Z", "rad/s", 1, False)]),
+    dict(file="uav_altitudes", title="UAV altitudes (M400)", fields=[
+        ("alt_fused_m", "Fused altitude",     "m", 1, False),
+        ("alt_baro_m",  "Barometer",          "m", 1, False),
+        ("home_alt_m",  "Home point altitude", "m", 1, False)]),
+    dict(file="uav_gps_accuracy", title="UAV GPS accuracy (M400)", fields=[
+        ("gps_hacc_mm",      "Horizontal accuracy", "m",    1e-3, False),
+        ("gps_vacc_mm",      "Vertical accuracy",   "m",    1e-3, False),
+        ("gps_sacc_cms",     "Speed accuracy",      "cm/s", 1,    False),
+        ("gps_fix",          "Fix",                 "",     1,    True),
+        ("gps_signal_level", "Signal level",        "",     1,    True),
+        ("gps_nsv_gps",      "GPS satellites",      "",     1,    True),
+        ("gps_nsv_glonass",  "GLONASS satellites",  "",     1,    True),
+        ("fused_nsv",        "Visible satellites",  "",     1,    True)]),
+    dict(file="uav_position_vo", title="UAV visual-odometry position (M400)", fields=[
+        ("vo_x_m",    "North",  "m", 1, False),
+        ("vo_y_m",    "East",   "m", 1, False),
+        ("vo_z_m",    "Down",   "m", 1, False),
+        ("vo_health", "Health", "",  1, True)]),
+    dict(file="uav_rc_link", title="UAV remote controller link (M400)", fields=[
+        ("rc_logic_connected",  "Link",          "", 1, True),
+        ("rc_sky_connected",    "Sky side",      "", 1, True),
+        ("rc_ground_connected", "Ground side",   "", 1, True),
+        ("rc_app_connected",    "App",           "", 1, True),
+        ("rcf_pitch",           "Pitch stick",   "", 1, False),
+        ("rcf_roll",            "Roll stick",    "", 1, False),
+        ("rcf_yaw",             "Yaw stick",     "", 1, False),
+        ("rcf_throttle",        "Throttle",      "", 1, False)]),
+    dict(file="uav_home_point", title="UAV home point (M400)", fields=[
+        ("home_lat_deg",   "Latitude",  "deg", 1, False),
+        ("home_lon_deg",   "Longitude", "deg", 1, False),
+        ("home_point_set", "Set",       "",    1, True)]),
+    dict(file="uav_system_status", title="UAV system status (M400)", fields=[
+        ("motor_start_error", "Motor start error", "", 1, True),
+        ("control_device_0",  "Control device 0",  "", 1, True),
+        ("control_device_1",  "Control device 1",  "", 1, True),
+        ("rtk_connected",     "RTK connected",     "", 1, True),
+        ("avoid_health",      "Obstacle sensors",  "", 1, True),
+        ("fused_flag0",       "Fused pos. flag 0", "", 1, True),
+        ("fused_flag1",       "Fused pos. flag 1", "", 1, True)]),
+    dict(file="uav_imu_navigation", title="UAV IMU navigation data (M400, with --imu 50)", fields=[
+        ("navi_pn_x", "Position X", "m",    1, False),
+        ("navi_pn_y", "Position Y", "m",    1, False),
+        ("navi_pn_z", "Position Z", "m",    1, False),
+        ("navi_vn_x", "Velocity X", "m/s",  1, False),
+        ("navi_vn_y", "Velocity Y", "m/s",  1, False),
+        ("navi_vn_z", "Velocity Z", "m/s",  1, False),
+        ("navi_an_x", "Accel X",    "m/s²", 1, False),
+        ("navi_an_y", "Accel Y",    "m/s²", 1, False),
+        ("navi_an_z", "Accel Z",    "m/s²", 1, False)]),
 ]
 
 GIMBAL_PLOTS = [

@@ -325,8 +325,6 @@ class Drone:
                 "flight_status": 2, "display_mode": 6, "flight_error": 0,
                 "bat1_percentage": 80, "bat1_voltage_mv": 51000, "bat1_current_ma": -15000,
                 "bat1_remaining_mah": 7000, "bat1_temp_c": 30.0,
-                "bat2_percentage": 79, "bat2_voltage_mv": 50900, "bat2_current_ma": -15000,
-                "bat2_remaining_mah": 6900, "bat2_temp_c": 31.0,
                 "esc_max_temp_c": random.uniform(30, 60),
                 "t_host": time.time(),
             }

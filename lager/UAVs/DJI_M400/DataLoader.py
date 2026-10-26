@@ -5,11 +5,11 @@ import lager.UAVs.DJI_M400.parameters as params
 import lager.UAVs.DJI_M400.stream as stream
 import lager.UAVs.DJI_M400.utils as utils 
 
-# M600 key -> (per-battery field, how the two batteries are combined)
-BATTERY_SUMMARY = {"bat_percentage":   ("percentage", "min"),
-                   "bat_voltage_mv":   ("voltage_mv", "mean"),
-                   "bat_current_ma":   ("current_ma", "sum"),
-                   "bat_capacity_mah": ("remaining_mah", "sum")}
+# M600 battery key -> field of the Matrice 400's single battery (bat1_*); battery2, in older recordings, repeats it
+BATTERY_SUMMARY = {"bat_percentage":   "bat1_percentage",
+                   "bat_voltage_mv":   "bat1_voltage_mv",
+                   "bat_current_ma":   "bat1_current_ma",
+                   "bat_capacity_mah": "bat1_remaining_mah"}
 
 
 class DataLoader:
@@ -55,10 +55,9 @@ class DataLoader:
         if fill:
             df = df.ffill()
             # whole-aircraft battery keys, as the M600 (the live Drone computes them with utils.battery_summary)
-            for col, (field, func) in BATTERY_SUMMARY.items():
-                src = [c for c in (f"bat1_{field}", f"bat2_{field}") if c in df]
-                if src:
-                    df[col] = getattr(df[src], func)(axis=1)
+            for col, src in BATTERY_SUMMARY.items():
+                if src in df:
+                    df[col] = df[src]
         return df
 
     def get_data(self, fill=True):

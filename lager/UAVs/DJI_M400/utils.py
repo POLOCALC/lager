@@ -44,7 +44,7 @@ def _rtk_position(p):
 
 def _gps_details(p):
     hdop, pdop, fix, vacc, hacc, sacc, n_gps, n_glonass, n_total, counter = struct.unpack("<6f2I2H", p)
-    return {"hdop": hdop * params.DOP_SCALE, "pdop": pdop * params.DOP_SCALE, "gps_fix": int(fix),
+    return {"hdop": hdop * params.DOP_SCALE, "pdop": pdop * params.DOP_SCALE, "gps_fix": int(fix) if math.isfinite(fix) else None,
             "gps_vacc_mm": vacc, "gps_hacc_mm": hacc, "gps_sacc_cms": sacc,
             "gps_nsv": n_total, "gps_nsv_gps": n_gps, "gps_nsv_glonass": n_glonass}
 
@@ -76,7 +76,7 @@ def _esc(p):
             continue                                   # slot not used by this aircraft
         n = i + 1
         out.update({f"esc{n}_rpm": rpm, f"esc{n}_current_a": ma / 1000.0, f"esc{n}_voltage_v": mv / 1000.0,
-                    f"esc{n}_temp_c": temp, f"esc{n}_flags": flags})
+                    f"esc{n}_temp_c": temp / 10.0, f"esc{n}_flags": flags})       # 0.1 C on the Matrice 400
     if out:
         out["esc_max_temp_c"] = max(v for k, v in out.items() if k.endswith("_temp_c"))
     return out
@@ -106,15 +106,16 @@ def _bits(prefix, size, flags):
     return size, decode
 
 
-def _acceleration_raw(p):
-    x, y, z = struct.unpack("<3f", p)                 # m/s^2, body FRD, at the IMU
-    return {"acc_raw_x": x, "acc_raw_y": y, "acc_raw_z": z,
-            "ax": x / GRAVITY, "ay": y / GRAVITY, "az": z / GRAVITY}
+def _acceleration_body(p):
+    x, y, z = struct.unpack("<3f", p)                 # g, gravity included (z ~ -1 at rest) on the Matrice 400
+    return {"acc_body_x": x, "acc_body_y": y, "acc_body_z": z, "ax": x, "ay": y, "az": z}
 
 
 def _position_fused(p):
-    lon, lat, alt, sats = struct.unpack("<ddfH", p)   # rad, rad, m (WGS84 ellipsoid)
-    return {"lon_deg": math.degrees(lon), "lat_deg": math.degrees(lat), "alt_m": alt, "fused_nsv": sats}
+    # 24 bytes on the Matrice 400 (22 in dji_fc_subscription.h): two more bytes, apparently health/status flags
+    lon, lat, alt, sats, flag0, flag1 = struct.unpack("<ddfHBB", p)   # rad, rad, m (WGS84 ellipsoid)
+    return {"lon_deg": math.degrees(lon), "lat_deg": math.degrees(lat), "alt_m": alt, "fused_nsv": sats,
+            "fused_flag0": flag0, "fused_flag1": flag1}
 
 
 def _home_point_info(p):
@@ -165,8 +166,8 @@ DECODERS = {
     "quaternion":            (16, _quaternion),
     "velocity":              (13, _velocity),
     "acceleration_ground":   _flat("<3f", ("acc_ground_x", "acc_ground_y", "acc_ground_z")),     # m/s^2, NEU
-    "acceleration_body":     _flat("<3f", ("acc_body_x", "acc_body_y", "acc_body_z")),           # m/s^2, FRU
-    "acceleration_raw":      (12, _acceleration_raw),                                            # m/s^2 and g, FRD
+    "acceleration_body":     (12, _acceleration_body),                                           # g, gravity included
+    "acceleration_raw":      _flat("<3f", ("acc_raw_x", "acc_raw_y", "acc_raw_z")),              # gravity removed
     "angular_rate_fused":    _flat("<3f", ("gyro_fused_x", "gyro_fused_y", "gyro_fused_z")),     # rad/s, NED
     "angular_rate_raw":      _flat("<3f", ("gx", "gy", "gz")),                                   # rad/s, FRD
     "compass":               _flat("<3h", ("mx", "my", "mz")),
@@ -178,10 +179,10 @@ DECODERS = {
     "gps_velocity":          _flat("<3f", ("gps_vel_x_cms", "gps_vel_y_cms", "gps_vel_z_cms")),  # cm/s
     "rtk_position":          (20, _rtk_position),
     "rtk_velocity":          _flat("<3f", ("rtk_vel_x_cms", "rtk_vel_y_cms", "rtk_vel_z_cms")),  # cm/s
-    "rtk_yaw":               (2,  lambda p: {"rtk_yaw_deg": struct.unpack("<h", p)[0] * params.RTK_YAW_SCALE}),
+    "rtk_yaw":               (4,  lambda p: {"rtk_yaw_deg": struct.unpack("<f", p)[0]}),          # float deg on the M400
     "rtk_position_info":     (1,  lambda p: {"rtk_pos_health": p[0]}),
     "rtk_yaw_info":          (1,  lambda p: {"rtk_yaw_health": p[0]}),
-    "position_fused":        (22, _position_fused),
+    "position_fused":        (24, _position_fused),
     "position_vo":           (13, lambda p: {**dict(zip(("vo_x_m", "vo_y_m", "vo_z_m"), struct.unpack_from("<3f", p))),
                                              "vo_health": p[12] & 0x07}),                        # NED, m
     "avoid_data":            (25, lambda p: {**dict(zip(("rp_down", "rp_front", "rp_right", "rp_back", "rp_left", "rp_up"),
@@ -211,7 +212,7 @@ DECODERS = {
     "imu_atti_navi":         (64, _imu_atti_navi),
     # slow group
     "battery1":              (33, _battery("bat1")),
-    "battery2":              (33, _battery("bat2")),
+    "battery2":              (33, _battery("bat2")),       # only in older recordings: it repeats battery1
     "gps_date":              _flat("<I", ("gps_date",)),                                         # yyyymmdd
     "gps_time":              _flat("<I", ("gps_time",)),                                         # hhmmss
     "altitude_of_homepoint": _flat("<f", ("home_alt_m",)),
@@ -222,20 +223,29 @@ DECODERS = {
 }
 
 
+decode_errors = 0      # payloads that couldn't be decoded (bad values): counted and skipped, never fatal
+
+
 def decode(name: str, payload: bytes) -> dict:
-    """Decode one DATA record; {} for an unknown topic or a payload of the wrong size."""
+    """Decode one DATA record; {} for an unknown topic, a payload of the wrong size or values that can't be
+    decoded (e.g. NaN where an integer is expected): one bad record must never stop the telemetry."""
+    global decode_errors
     entry = DECODERS.get(name)
     if entry is None or entry[0] != len(payload):
         return {}
-    return entry[1](payload)
+    try:
+        return entry[1](payload)
+    except (ValueError, OverflowError, struct.error):
+        decode_errors += 1
+        return {}
 
 
 def battery_summary(state: dict) -> dict:
-    """The M600 battery keys (whole aircraft), from the bat1_*/bat2_* keys present in state."""
-    present = [b for b in ("bat1", "bat2") if f"{b}_voltage_mv" in state]
-    if not present:
+    """The M600 battery keys, from the Matrice 400's single battery (bat1_*). Older recordings also have bat2_*,
+    which only repeats it: it is not added."""
+    if "bat1_voltage_mv" not in state:
         return {}
-    return {"bat_percentage":   min(state[f"{b}_percentage"] for b in present),
-            "bat_voltage_mv":   sum(state[f"{b}_voltage_mv"] for b in present) / len(present),
-            "bat_current_ma":   sum(state[f"{b}_current_ma"] for b in present),
-            "bat_capacity_mah": sum(state[f"{b}_remaining_mah"] for b in present)}
+    return {"bat_percentage":   state["bat1_percentage"],
+            "bat_voltage_mv":   state["bat1_voltage_mv"],
+            "bat_current_ma":   state["bat1_current_ma"],
+            "bat_capacity_mah": state["bat1_remaining_mah"]}
