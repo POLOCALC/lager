@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["lager"]
+
+[project]
+name = "lager"
+version = "1.0.0"
+description = "Live Attitude and Gimbal Error Resolver"
+authors = [
+    {name = "Federico Cacciotti", email = "federico.cacciotti@unimib.it"}
+]
+requires-python = ">=3.9"
+dependencies = [
+    "pandas==3.0.0",
+    "matplotlib==3.10.8",
+    "mpl_ascii==1.0.1",
+    "numpy>=2.2.4",
+    "pymavlink==2.4.49",
+    "pyserial==3.5",
+    "pyyaml==6.0.1",
+    "pymap3d==3.2.0",
+    "rich==13.7.1",
+    "RPi.GPIO>=0.7.0",
+]
