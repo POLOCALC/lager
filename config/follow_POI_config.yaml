@@ -35,3 +35,4 @@ POI:
   longitude: 9.211680
   altitude: 124
   max_distance: 700.0  # meters
+  roll_deg: 0. #gimbal rotation about the line of sight

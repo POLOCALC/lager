@@ -6,12 +6,13 @@ import pymap3d as pm
 logger = logging.getLogger(__name__)
 
 class POI():
-    def __init__(self, name, latitude, longitude, altitude, max_distance):
+    def __init__(self, name, latitude, longitude, altitude, max_distance, roll_deg=0):
         self.name = name
         self.latitude = latitude
         self.longitude = longitude
         self.altitude = altitude
         self.max_distance = max_distance
+        self.roll_deg = roll_deg
         self.current_distance = None
         self.is_tracking = False
         self.tracking_thread = None
@@ -62,8 +63,8 @@ class POI():
                     gimbal_yaw = 0.0
                     pass
 
-                # roll is not used for pointing, but we can set it to 0 to keep the horizon level
-                gimbal_roll = 0.0
+                # roll is used to rotate the source about the line of sight, defaults to 0 (horizon level)
+                gimbal_roll = self.roll_deg
 
                 # compute pitch correction based on uav and POI world coordinates
                 az, el, rng = pm.geodetic2aer(self.latitude, self.longitude, self.altitude,
@@ -98,6 +99,7 @@ class POI():
             'longitude': self.longitude,
             'altitude': self.altitude,
             'max_distance': self.max_distance,
+            'roll_deg': self.roll_deg,
             'current_distance': self.current_distance,
             'is_tracking': self.is_tracking
         }
