@@ -355,6 +355,16 @@ class PointingController:
         else:
             self.logger.warning("POI configuration is missing 'max_distance' field.")
             max_distance = None
-        
-        poi = POI.POI(name, latitude, longitude, altitude, max_distance)
+        if 'roll_deg' in self.config['poi']:
+            try:
+                roll_deg = float(self.config['poi']['roll_deg'])
+                self.logger.info(f"POI roll: {roll_deg}°")
+            except (TypeError, ValueError):
+                self.logger.warning(f"Invalid POI 'roll_deg' value: {self.config['poi']['roll_deg']!r}; defaulting to 0°")
+                roll_deg = 0.
+        else:
+            self.logger.info("POI configuration is missing 'roll_deg' field; defaulting to 0°")
+            roll_deg = 0.
+
+        poi = POI.POI(name, latitude, longitude, altitude, max_distance, roll_deg)
         return poi

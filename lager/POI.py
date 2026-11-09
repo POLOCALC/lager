@@ -1,16 +1,18 @@
 import logging
+import math
 import threading
 import pymap3d as pm
 
 logger = logging.getLogger(__name__)
 
 class POI():
-    def __init__(self, name, latitude, longitude, altitude, max_distance):
+    def __init__(self, name, latitude, longitude, altitude, max_distance, roll_deg=0):
         self.name = name
         self.latitude = latitude
         self.longitude = longitude
         self.altitude = altitude
         self.max_distance = max_distance
+        self.roll_deg = roll_deg
         self.current_distance = None
         self.is_tracking = False
         self.tracking_thread = None
@@ -58,22 +60,20 @@ class POI():
             else:
                 self.is_tracking = True
 
-                # compute gimbal corrections to point at the POI
-                if forward_heading:
-                    gimbal_yaw = 0.0
-                else:
-                    # TODO
-                    gimbal_yaw = 0.0
-                    pass
-
-                # roll is not used for pointing, but we can set it to 0 to keep the horizon level
-                gimbal_roll = 0.0
-
-                # compute pitch correction based on uav and POI world coordinates
+                # compute the POI line of sight from the uav and POI world coordinates
                 az, el, rng = pm.geodetic2aer(self.latitude, self.longitude, self.altitude,
                                               uav_lat, uav_lon, uav_alt,
                                               deg=True)
-                gimbal_pitch = el
+
+                # azimuth of the POI relative to the gimbal yaw reference
+                if forward_heading:
+                    az_rel = 0.0
+                else:
+                    # TODO
+                    az_rel = 0.0
+
+                # convert line of sight and image rotation into motor angles (yaw -> roll -> pitch)
+                gimbal_yaw, gimbal_pitch, gimbal_roll = self.los_to_gimbal_angles(az_rel, el, self.roll_deg)
 
                 # set the gimbal orientation to point at the POI
                 gimbal.goto(yaw=gimbal_yaw, pitch=gimbal_pitch, roll=gimbal_roll, wait=False)
@@ -101,27 +101,57 @@ class POI():
             else:
                 self.is_tracking = True
 
-                # compute gimbal corrections to point at the POI
-                if forward_heading:
-                    gimbal_yaw = 0.0
-                else:
-                    # TODO
-                    gimbal_yaw = 0.0
-                    pass
-
-                # roll is not used for pointing, but we can set it to 0 to keep the horizon level
-                gimbal_roll = 0.0
-
-                # compute pitch correction based on uav and POI world coordinates
+                # compute the POI line of sight from the gnss source and POI world coordinates
                 az, el, rng = pm.geodetic2aer(self.latitude, self.longitude, self.altitude,
                                               lat, lon, alt,
                                               deg=True)
-                gimbal_pitch = el
+
+                # azimuth of the POI relative to the gimbal yaw reference
+                if forward_heading:
+                    az_rel = 0.0
+                else:
+                    # TODO
+                    az_rel = 0.0
+
+                # convert line of sight and image rotation into motor angles (yaw -> roll -> pitch)
+                gimbal_yaw, gimbal_pitch, gimbal_roll = self.los_to_gimbal_angles(az_rel, el, self.roll_deg)
 
                 # set the gimbal orientation to point at the POI
                 gimbal.goto(yaw=gimbal_yaw, pitch=gimbal_pitch, roll=gimbal_roll, wait=False)
 
                 self._stop_tracking_event.wait(timeout=0.1)  # update at ~10 Hz
+
+    @staticmethod
+    def los_to_gimbal_angles(az_deg, el_deg, image_roll_deg):
+        """
+        Convert a line of sight and an image rotation into gimbal motor angles.
+
+        The gimbal motors are mounted (from drone to payload) yaw -> roll -> pitch, so the
+        image rotation about the line of sight is split between the roll and yaw motors,
+        and the pitch is adjusted to keep the line of sight on the POI.
+
+        Parameters:
+        -----------
+            az_deg : float
+                Azimuth of the POI relative to the gimbal yaw reference [deg].
+            el_deg : float
+                Elevation of the POI, positive up [deg].
+            image_roll_deg : float
+                Rotation of the image about the line of sight [deg]. Keep within +-90 deg.
+
+        Returns:
+        --------
+            (yaw, pitch, roll) : tuple of float
+                Gimbal motor angles [deg].
+        """
+        a = math.radians(az_deg)
+        e = math.radians(el_deg)
+        r = math.radians(image_roll_deg)
+        roll = math.asin(math.cos(e) * math.sin(r))
+        pitch = math.atan2(math.sin(e), math.cos(e) * math.cos(r))
+        # motor convention: +yaw turns right (clockwise seen from above), +roll lowers the right side
+        yaw = a - math.atan2(math.sin(e) * math.sin(r), math.cos(r))
+        return math.degrees(yaw), math.degrees(pitch), math.degrees(roll)
 
     def stop_tracking(self):
         logger.info(f"Stopping tracking of POI: {self.name}")
@@ -145,6 +175,7 @@ class POI():
             'longitude': self.longitude,
             'altitude': self.altitude,
             'max_distance': self.max_distance,
+            'roll_deg': self.roll_deg,
             'current_distance': self.current_distance,
             'is_tracking': self.is_tracking
         }
