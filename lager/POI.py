@@ -150,7 +150,7 @@ class POI():
         roll = math.asin(math.cos(e) * math.sin(r))
         pitch = math.atan2(math.sin(e), math.cos(e) * math.cos(r))
         # motor convention: +yaw turns right (clockwise seen from above), +roll lowers the right side
-        yaw = a + math.atan2(math.sin(e) * math.sin(r), math.cos(r))
+        yaw = a - math.atan2(math.sin(e) * math.sin(r), math.cos(r))
         return math.degrees(yaw), math.degrees(pitch), math.degrees(roll)
 
     def stop_tracking(self):
