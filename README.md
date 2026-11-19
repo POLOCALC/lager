@@ -1,72 +1,64 @@
 # LAGER
 
-Live Attitude and Gimbal Error Resolver: a Python-based controller for UAV payload systems, designed to manage and coordinate a drone (DJI M600) and a gimbal (Gremsy T7) for autonomous Point-of-Interest (POI) tracking. The system reads a YAML configuration file, establishes serial connections to the hardware, logs telemetry data, and continuously points the gimbal at a fixed geographic target while the UAV moves.
+Live Attitude and Gimbal Error Resolver: a Python package that drives a gimbal (Gremsy T7) and reads a DJI drone's telemetry (Matrice 600 or Matrice 400), to keep a payload pointed at a fixed geographic target, the Point of Interest (POI), while the drone moves.
+
+lager is used as a library by [PORTER](https://github.com/POLOCALC/porter), the POLOCALC flight software, which creates the `PointingController` from the `pointing_controller` block of its configuration. Before November 2026 lager was also a standalone program; that version is kept in the `old_standalone_version` branch.
 
 ---
-
-## To install
-pip install -e .
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Repository Structure](#repository-structure)
+- [Repository structure](#repository-structure)
 - [Hardware](#hardware)
-- [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
-- [Autostart](#autostart)
+- [POI tracking and image roll](#poi-tracking-and-image-roll)
+- [Data files and plots](#data-files-and-plots)
 - [Modules](#modules)
-- [Tests](#tests)
 - [TODO](#todo)
 
 ---
 
 ## Overview
 
-The controller runs on a companion computer onboard the UAV (tested on Raspberry Pi). At startup it:
+`PointingController` (in `lager/PointingController.py`) is built from a configuration dictionary or YAML file. It:
 
-1. Loads a YAML configuration file.
-2. Instantiates and connects to the drone (DJI M600 via DJI OSDK over serial) and the gimbal (Gremsy T7 via MAVLink over serial).
-3. Starts telemetry logging for both devices to timestamped CSV files.
-4. Optionally starts a live terminal display (powered by `rich`) showing real-time telemetry panels and the last log lines.
-5. Continuously reads the UAV GPS position and computes the azimuth/elevation from the UAV to the POI using `pymap3d`, then commands the gimbal pitch accordingly.
+1. creates the gimbal object (Gremsy T7, MAVLink over serial),
+2. creates the drone object, if configured:
+   - **DJI Matrice 600**: DJI OSDK over serial,
+   - **DJI Matrice 400**: Payload SDK through the E-Port, using the `psdk_telemetry` program from the `Payload-SDK` submodule,
+3. creates the `POI`, if configured,
+4. connects to the devices and logs their telemetry to binary files in the data folder (`connect()`, `start_telemetry()`),
+5. on request, tracks the POI: about 10 times per second it computes the line of sight from the current position to the POI with `pymap3d` and sends the gimbal angles (`poi.start_tracking(...)`).
+
+The drone link is **passive**: lager only receives its telemetry, it never commands the drone.
 
 ---
 
-## Repository Structure
+## Repository structure
 
 ```
-lager/
-├── autostart.sh            # Entry-point called by telemetry.service at boot
-├── cli.py                  # Rich-based live terminal display
-├── Controller.py           # Main orchestration class
-├── DataLoader.py           # Generic data loading utilities
-├── decode_telemetry.py     # Offline telemetry decoding and plotting
-├── plot_telemetry.py       # Telemetry plotting utilities
-├── follow_POI.py           # End-to-end POI tracking entry point
-├── GPIO.py                 # GPIO pin control for status LED
-├── parameters.py           # Global parameters and paths
-├── POI.py                  # POI class and gimbal tracking logic
-├── requirements.txt        # Python dependencies
-├── config/
-│   ├── follow_POI_config.yaml          # Config for POI tracking flight
-│   ├── move_gimbal_config.yaml         # Config for gimbal movement tests
-│   ├── show_telemetry_config.yaml      # Config for live telemetry display
-│   └── show_telemetry_sim_config.yaml  # Config for simulated telemetry display
-├── Drones/
-│   └── DJI_M600/           # DJI M600 driver (connection, telemetry, utils)
-├── Gimbals/
-│   └── Gremsy_T7/          # Gremsy T7 driver (MAVLink, telemetry, goto)
-├── modules/
-│   └── Payload-SDK/         # git submodule: DJI Payload SDK fork, Matrice 400 telemetry bridge (psdk_telemetry)
-└── tests/
-    ├── data/
-    │   └── gimbal_motion/   # Logged data from gimbal movement tests
-    ├── move_gimbal.py       # Gimbal movement test
-    ├── show_telemetry.py    # Live telemetry display test
-    └── show_telemetry_sim.py# Simulated telemetry display test
+lager/                              # repository root
+├── pyproject.toml                  # package "lager" and its pinned dependencies
+├── lager/                          # the Python package
+│   ├── PointingController.py       # builds gimbal, drone and POI from the configuration
+│   ├── POI.py                      # POI class: tracking loop, line of sight -> gimbal angles (with image roll)
+│   ├── DataLoader.py               # decodes the telemetry files of a data folder into pandas DataFrames
+│   ├── GPIO.py                     # optional status LED
+│   ├── parameters.py               # data paths and logging defaults when used outside porter, LED settings
+│   ├── Gimbals/
+│   │   └── Gremsy_T7/              # Gremsy T7 driver (MAVLink, telemetry, goto)
+│   └── UAVs/
+│       ├── DJI_M600/               # DJI Matrice 600 driver (DJI OSDK over serial)
+│       └── DJI_M400/               # DJI Matrice 400 driver (psdk_telemetry stream, from a socket or a child process)
+├── decoder/
+│   ├── decode_telemetry.py         # decodes a data folder and saves it as a pickle
+│   └── plot_telemetry.py           # one PNG per UAV and gimbal telemetry quantity
+├── test_roll_pointing.py           # bench test of the image-roll pointing on the gimbal alone
+└── modules/
+    └── Payload-SDK/                # git submodule: POLOCALC's fork of DJI's Payload SDK (psdk_telemetry)
 ```
 
 ---
@@ -75,14 +67,15 @@ lager/
 
 | Component | Model | Interface |
 |-----------|-------|-----------|
-| Drone | DJI M600 | Serial (DJI OSDK), `/dev/serial0` |
-| Gimbal | Gremsy T7 | Serial (MAVLink), `/dev/serial1` |
-| Companion computer | Raspberry Pi (or equivalent) | — |
-| Status LED | — | GPIO pin 17 (BCM) |
+| Drone | DJI Matrice 600 | Serial (DJI OSDK) |
+| Drone | DJI Matrice 400 | E-Port, USB device mode (`/dev/ttyGS0`), through the Payload SDK |
+| Gimbal | Gremsy T7 | Serial (MAVLink) |
+| Companion computer | Raspberry Pi 5 | — |
+| Status LED (optional) | — | GPIO pin 17 (BCM) |
 
-### Wiring
+### Serial wiring (Matrice 600 and Gremsy T7)
 
-Both serial connections use 3.3 V logic (TX / RX / GND — no hardware flow control).
+Both serial connections use 3.3 V logic (TX / RX / GND, no hardware flow control). Example wiring:
 
 | Device | RPi UART | `/dev` node | RPi pin (BCM) | Signal |
 |--------|----------|-------------|---------------|--------|
@@ -91,31 +84,11 @@ Both serial connections use 3.3 V logic (TX / RX / GND — no hardware flow cont
 | Gremsy T7 | UART4 | `/dev/serial1` | 8 | TXD4 → gimbal RX |
 | Gremsy T7 | UART4 | `/dev/serial1` | 9 | RXD4 ← gimbal TX |
 
-Enable UART4 by adding `dtoverlay=uart4` to `/boot/firmware/config.txt` and rebooting. The default UART0 must have the Linux console detached (set `enable_uart=1` and remove `console=serial0` from `/boot/firmware/cmdline.txt`).
+Enable UART4 by adding `dtoverlay=uart4` to `/boot/firmware/config.txt` and rebooting. The default UART0 must have the Linux console detached (set `enable_uart=1` and remove `console=serial0` from `/boot/firmware/cmdline.txt`). On the POLOCALC payload the ports are set in porter's configuration (e.g. the gimbal on `/dev/ttyAMA4`).
 
----
+### Matrice 400
 
-## Requirements
-
-Python 3.8 or later is recommended. Install dependencies with:
-
-```bash
-pip install -r requirements.txt
-```
-
-Key dependencies:
-
-| Package | Purpose |
-|---------|---------|
-| `pymavlink` | MAVLink communication with Gremsy T7 |
-| `pyserial` | Serial communication |
-| `pymap3d` | Geodetic ↔ AER coordinate conversion for POI pointing |
-| `rich` | Live terminal display |
-| `pandas` / `numpy` | Telemetry data handling |
-| `matplotlib` | Telemetry plotting |
-| `pyyaml` | Configuration file parsing |
-| `RPi.GPIO` | GPIO pins handling |
-| `mpl_ascii` | ASCII telemetry plotting |
+The Matrice 400 telemetry comes from `psdk_telemetry`, in the `Payload-SDK` submodule. The Pi's USB-C port must be in device mode and the DJI credentials must be set before building it: see [its README](modules/Payload-SDK/README.md).
 
 ---
 
@@ -124,23 +97,35 @@ Key dependencies:
 ```bash
 git clone --recurse-submodules https://github.com/POLOCALC/lager.git
 cd lager
-pip install -r requirements.txt
+pip install -e .
 ```
+
+`pip install -e .` installs the `lager` package and its dependencies from `pyproject.toml` (`pymavlink`, `pyserial`, `pymap3d`, `pandas`, `numpy`, `matplotlib`, `mpl_ascii`, `rich`, `pyyaml`, `RPi.GPIO`). In an existing clone, fetch the Payload SDK with `git submodule update --init --recursive`.
+
+On the POLOCALC payload, porter's `install_porter.sh` installs lager in porter's virtual environment (`pip install --no-deps -e modules/lager`, with the dependency versions fixed by porter's `requirements.lock`) and builds `psdk_telemetry`.
 
 ---
 
 ## Configuration
 
-All behaviour is controlled through a YAML configuration file. A complete example for POI tracking:
+The configuration has up to three blocks: `gimbal`, `uav` and `poi`. In porter they sit under `pointing_controller`. Leave out `uav` or `poi` if not used.
 
 ```yaml
-Controller:
-  name: Lab Test Controller
-  display:
-    enable: True
-    refresh_rate: 2  # Hz
+gimbal:
+  name: Gremsy T7
+  simulator: False
+  connection:
+    type: serial
+    protocol: mavlink
+    port: /dev/ttyAMA4
+    baudrate: 115200
+    timeout: 3
+  telemetry:
+    heartbeat_frequency: 1      # Hz
+    frequency: 50               # Hz
 
-Drone:
+# DJI Matrice 600
+uav:
   name: DJI M600
   simulator: False
   connection:
@@ -150,150 +135,153 @@ Drone:
     baudrate: 115200
     timeout: 3
   telemetry:
-    frequency: 50  # Hz
+    frequency: 50               # Hz
 
-Gimbal:
-  name: Gremsy T7
+# or DJI Matrice 400
+uav:
+  name: DJI M400
   simulator: False
   connection:
-    type: serial
-    protocol: mavlink
-    port: /dev/serial1
-    baudrate: 115200
-    timeout: 3
-  telemetry:
-    heartbeat_frequency: 1  # Hz
-    frequency: 50  # Hz
+    type: usb
+    protocol: DJI PSDK
+    port: /dev/ttyGS0
+    socket: /tmp/psdk_telemetry.sock   # read the stream from psdk-bridge.service; remove it to run psdk_telemetry from lager
+    timeout: 60                 # s to wait for the drone link
+  telemetry:                    # with "socket" set, psdk-bridge.service sets these rates
+    imu_frequency: 0            # IMU navigation group, 50 Hz only; 0 = off
+    frequency: 10               # fast group: attitude, IMU, fused position, obstacles, RC
+    status_frequency: 5         # status group: GPS, RTK, flight state, anomalies, ESCs
+    slow_frequency: 1           # slow group: battery, GPS date/time, home point
+    stats_s: 5                  # s between link statistics
 
-POI:
+poi:
   name: Target
-  latitude: 37.7749
-  longitude: -122.4194
-  altitude: 30.0       # meters above sea level
-  max_distance: 700.0  # meters; tracking is paused if UAV is farther than this
+  latitude: 45.5136599
+  longitude: 9.2113794
+  altitude: 170.0               # metres above mean sea level
+  max_distance: 1000.0          # metres; tracking pauses when farther than this
+  roll_deg: 0.0                 # optional image roll about the line of sight, default 0 (horizon level)
 ```
 
-Set `simulator: True` for either device to run without physical hardware (synthetic telemetry data will be generated).
+- `name` selects the driver: `Gremsy T7`, `DJI M600` or `DJI M400`.
+- `simulator: True` generates synthetic telemetry instead of opening the device.
+- `altitude` must use the same reference as the position source: height above mean sea level.
 
 ---
 
 ## Usage
 
-Run the main scripts from the project root:
+From Python, the same way porter uses it:
 
-```bash
-# POI tracking (requires drone + gimbal connected)
-python3 follow_POI.py
+```python
+from lager.PointingController import PointingController
 
-# Decode and inspect previously logged telemetry files
-python3 decode_telemetry.py
+pc = PointingController("config.yaml", data_folder="/path/to/run", verbose=True)
+pc.connect()
+pc.start_telemetry()
 
-# Plot previously decoded telemetry files
-python3 plot_telemetry.py
+pc.poi.start_tracking(pc.gimbal, uav=pc.uav)              # position from the drone telemetry
+# or: pc.poi.start_tracking(pc.gimbal, gnss_source=gnss)  # position from another GNSS (a dict with latitude, longitude, altitude)
+...
+pc.poi.stop_tracking()
+pc.stop_telemetry()
+pc.disconnect()
 ```
 
-Run test scripts from the `tests/` directory:
+`configuration` is a YAML path or an already-loaded dictionary. Without `data_folder`, lager creates `telemetry_<UTC time>/` under `parameters.DATA_PATH` (`/home/polocalc/pointing_control_data`), updates the `current` symlink there and logs to `controller.log`. With `data_folder` (porter's case), it writes into that folder and leaves the logging setup to the caller.
+
+**Bench test of the image roll** (gimbal only, no drone):
 
 ```bash
-cd tests/
-
-# Live telemetry display only
-python3 show_telemetry.py
-
-# Simulated telemetry display (no hardware needed)
-python3 show_telemetry_sim.py
-
-# Move gimbal to specific angles
-python3 move_gimbal.py
+python3 test_roll_pointing.py --port /dev/serial1 --yaw 0 --pitch 30 --angle 20
 ```
 
-Press **Ctrl+C** to stop any running script gracefully; telemetry logging will be stopped and devices disconnected cleanly.
-
-Each run creates a timestamped folder under `parameters.DATA_PATH` containing the log file and a copy of the configuration used. A `current` symlink is automatically updated to point to the latest run folder.
+It points the gimbal at a fixed yaw/pitch, then sweeps the image roll 0 → +angle → −angle → 0 while keeping the same line of sight (`--step` and `--dt` set the sweep speed).
 
 ---
 
-## Autostart
+## POI tracking and image roll
 
-`autostart.sh` is the entry-point executed automatically at boot by the `telemetry.service` systemd unit. It activates the project's virtual environment and launches `follow_POI.py` with the flight configuration. If it crashes, it restarts automatically after 5 seconds.
+The tracking loop (`POI.py`) runs at about 10 Hz:
 
-```bash
-#!/bin/bash
-set -e
+1. reads the current position, from the drone telemetry or from the given GNSS source,
+2. computes the distance to the POI; beyond `max_distance` tracking pauses and is checked again every 5 s,
+3. computes the elevation of the POI with `pymap3d.geodetic2aer`,
+4. converts the line of sight and the requested image roll into motor angles with `POI.los_to_gimbal_angles(az, el, roll)`, and sends them with `gimbal.goto(...)`.
 
-source /home/polocalc/lager_venv/bin/activate
-cd /home/polocalc/lager
+**Image roll.** The Gremsy T7 motors are stacked yaw → roll → pitch (from the drone to the payload). To rotate the image by `roll_deg` about the line of sight without moving the line of sight, the rotation is split between the roll and yaw motors and the pitch is corrected:
 
-while true; do
-    exec python3 follow_POI.py --config config/follow_POI_config.yaml
-    EXIT_CODE=$?
-    sleep 5
-done
+```
+roll  = asin( cos(el) · sin(r) )
+pitch = atan2( sin(el), cos(el) · cos(r) )
+yaw   = az − atan2( sin(el) · sin(r), cos(r) )
 ```
 
-To install, enable, and manage the service:
+with `r` = `roll_deg`. Motor convention: +yaw turns right (clockwise seen from above), +roll lowers the right side. Keep `roll_deg` within ±90°.
+
+**Azimuth.** The gimbal yaw follows the drone heading (`forward_heading=True`): the POI azimuth is not used yet, so the drone must face the POI. Only the elevation and the image roll are tracked.
+
+---
+
+## Data files and plots
+
+Each run writes, in the data folder:
+
+| File | Content |
+|---|---|
+| `uav_telemetry.bin` | raw drone telemetry, record by record (M600 or M400) |
+| `psdk_telemetry.log` | `psdk_telemetry`'s log, only when lager runs it itself (M400 without `socket`) |
+| `gimbal_telemetry.bin` | raw gimbal telemetry |
+| `controller.log` | lager's log, only when used without `data_folder` |
+
+Decode and plot a data folder (default: `/home/polocalc/pointing_control_data/current`):
 
 ```bash
-# Enable the service to start at every boot
-sudo systemctl enable telemetry.service
-
-# Start / stop manually
-sudo systemctl start telemetry.service
-sudo systemctl stop telemetry.service
-
-# Check status and live logs
-sudo systemctl status telemetry.service
-journalctl -u telemetry.service -f
+python3 decoder/decode_telemetry.py [--data-folder <folder>] [--force-decode] [--overwrite]
+python3 decoder/plot_telemetry.py   [--data-folder <folder>] [--dpi 120]
 ```
+
+- `decode_telemetry.py` prints the UAV and gimbal DataFrames and saves them as `pointing_control_data.pkl`.
+- `plot_telemetry.py` saves one PNG per quantity in `<folder>/pointing_controller_plots/`, without a display. Plots whose fields aren't in the data are skipped, so the same script serves the M600 and the M400.
+
+porter's `decoder/plot_sensors_data.py` runs `plot_telemetry.py` automatically on each run folder.
 
 ---
 
 ## Modules
 
-### `Controller`
-The central orchestrator. Loaded with a YAML config file, it:
-- Instantiates the drone and gimbal objects via `get_drone()` / `get_gimbal()`.
-- Instantiates the `POI` object via `get_POI()`.
-- Exposes `connect()`, `disconnect()`, `start_telemetry()`, `stop_telemetry()`.
-- Optionally starts the `cli.live_display()` thread.
+### `PointingController`
+Builds the devices and the POI from the configuration (`get_gimbal()`, `get_uav()`, `get_POI()`), and exposes `connect()`, `disconnect()`, `start_telemetry()`, `stop_telemetry()`. A missing or unknown `uav` or `poi` block is logged and that part is skipped (`pc.uav` / `pc.poi` is `None`).
 
 ### `POI`
-Represents a fixed geographic point of interest. Key methods:
-- `start_tracking(uav, gimbal)` — starts a background thread that polls the UAV position at 10 Hz, computes the gimbal pitch via `pymap3d.geodetic2aer`, and sends a `gimbal.goto()` command.
-- `stop_tracking()` — stops the tracking thread.
-- `distance(uav_lat, uav_lon, uav_alt)` — returns the 3-D Euclidean distance (metres) between the UAV and the POI via ECEF coordinates.
+A fixed geographic target. Key methods:
+- `start_tracking(gimbal, uav=None, gnss_source=None, forward_heading=True)`: starts the tracking thread, from the drone telemetry or from a GNSS source,
+- `stop_tracking()`: stops it (wakes the loop immediately),
+- `distance(lat, lon, alt)`: 3-D distance in metres from a position to the POI, through ECEF coordinates,
+- `los_to_gimbal_angles(az, el, roll)`: line of sight and image roll → gimbal motor angles,
+- `get_data()`: name, coordinates, `max_distance`, `roll_deg`, current distance and tracking state, for porter's telemetry.
 
-Pitch computation:
-```python
-az, el, rng = pymap3d.geodetic2aer(poi_lat, poi_lon, poi_alt,
-                                    uav_lat, uav_lon, uav_alt, deg=True)
-gimbal_pitch = el
-```
+### `UAVs/DJI_M600`
+DJI Matrice 600 driver using the DJI OSDK protocol over serial: connection, telemetry subscription and background logging.
 
-### `Drones/DJI_M600`
-Driver for the DJI M600 using the DJI OSDK protocol over serial. Provides:
-- Serial connection management.
-- Telemetry subscription and background logging.
-- A `rich` panel renderer for the live display.
+### `UAVs/DJI_M400`
+DJI Matrice 400 driver. It gets the `psdk_telemetry` record stream in one of two ways:
+- with `socket` set: from `/tmp/psdk_telemetry.sock`, served by porter's `psdk-bridge.service`, which owns the PSDK connection from boot and also runs the DJI Pilot 2 widgets,
+- otherwise: it runs `psdk_telemetry` itself as a child process and reads its stdout.
+
+It parses the records into its telemetry state (position, attitude, GPS/RTK, battery, flight state, ESCs, anomalies) and writes the raw stream to `uav_telemetry.bin`.
 
 ### `modules/Payload-SDK`
-Git submodule with POLOCALC's fork of DJI's Payload SDK. It holds `psdk_telemetry`, the C program that gets the Matrice 400 telemetry through the E-Port and streams it to lager, and the USB gadget setup for the Raspberry Pi. In an existing clone, fetch it with `git submodule update --init --recursive`. See [its README](modules/Payload-SDK/README.md) for configuration and build.
+Git submodule with POLOCALC's fork of DJI's Payload SDK. It holds `psdk_telemetry`, the C program that gets the Matrice 400 telemetry through the E-Port, and the USB gadget setup for the Raspberry Pi. See [its README](modules/Payload-SDK/README.md) for configuration and build.
 
 ### `Gimbals/Gremsy_T7`
-Driver for the Gremsy T7 using MAVLink over serial. Provides:
-- Heartbeat loop and MAVLink session management.
-- `goto(yaw, pitch, roll, wait)` for absolute angle commanding.
-- Telemetry subscription and background logging.
-- A `rich` panel renderer for the live display.
-
-### `cli`
-Builds and refreshes a `rich` `Live` layout with three panes:
-- **Drone panel** — real-time drone telemetry.
-- **Gimbal panel** — real-time gimbal telemetry.
-- **Footer** — last N lines of the log file, colour-coded by log level.
+Gremsy T7 driver using MAVLink over serial:
+- heartbeat loop and MAVLink session management,
+- `goto(yaw, pitch, roll, wait)` for absolute angle commands,
+- telemetry subscription and background logging.
 
 ### `GPIO`
-Controls a status LED on a Raspberry Pi GPIO pin (BCM pin 17 by default). <font color="red">Don't forget a 220 Ohm resistor to avoid frying the diode and GPIO.</font> The LED reflects the controller lifecycle:
+Optional status LED on a Raspberry Pi GPIO pin (BCM 17 by default), disabled by default (`ENABLE_LED_INDICATOR = False` in `lager/parameters.py`). <font color="red">Don't forget a 220 Ohm resistor to avoid frying the diode and GPIO.</font>
 
 | LED state | Meaning |
 |-----------|----------|
@@ -301,30 +289,13 @@ Controls a status LED on a Raspberry Pi GPIO pin (BCM pin 17 by default). <font 
 | Solid on | Initialising or connected, telemetry idle |
 | Blinking | Telemetry acquisition in progress |
 
-The `LED` class wraps `RPi.GPIO` and handles the blink loop in a daemon thread. If `RPi.GPIO` is not available (e.g. on a development machine) it fails silently and the rest of the code is unaffected. The LED pin and enable flag are configured via `parameters.py` (`LED_INDICATOR_PIN`, `ENABLE_LED_INDICATOR`).
-
----
-
-## Tests
-
-| Script | Location | Description |
-|--------|----------|-------------|
-| `follow_POI.py` | root | Full end-to-end POI tracking run |
-| `decode_telemetry.py` | root | Load and print a saved telemetry binary file |
-| `show_telemetry.py` | `tests/` | Live display with real hardware |
-| `show_telemetry_sim.py` | `tests/` | Live display with simulated data |
-| `move_gimbal_RC.py` | `tests/` | Command the gimbal to a sequence of angles following the remote RC sticks |
+The `LED` class wraps `RPi.GPIO` and handles the blink loop in a daemon thread. `RPi.GPIO` is imported unconditionally (and `PointingController` imports `GPIO.py`), so it must be installed even with the LED disabled; on a development machine, `pip install RPi.GPIO` or a stub module is needed.
 
 ---
 
 ## TODO
-- POI pointing track (HIGH PRIORITY)
-    - add a dynamic correction related to the uav attitude (yaw, pitch, roll)
-
+- POI tracking
+    - use the POI azimuth (`forward_heading=False`) instead of relying on the drone heading
+    - add a dynamic correction for the drone attitude (yaw, pitch, roll)
 - DJI M600
-    - understand heading: from magnetometer? from rtk?
-    - simulate data writing on file
-    - separate graphic function from main file
-
-- Gremsy T7
-    - separate graphic function from main file
+    - understand heading: from magnetometer? from RTK?
